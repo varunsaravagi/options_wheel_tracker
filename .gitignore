@@ -1,0 +1,19 @@
+# Environment files — never commit these
+.env
+
+# Databases — live outside worktrees, never commit
+data/
+logs/
+
+# Dev worktree — git manages this, not tracked as a directory
+dev/
+
+# Rust
+target/
+
+# Node
+node_modules/
+.next/
+
+# OS
+.DS_Store
