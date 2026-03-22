@@ -1,7 +1,7 @@
 use axum::{routing::{delete, get, post}, Router};
 use sqlx::SqlitePool;
 use tower_http::cors::CorsLayer;
-use crate::handlers::{accounts, calls, puts, share_lots};
+use crate::handlers::{accounts, calls, dashboard, history, puts, share_lots};
 
 pub fn create_router(pool: SqlitePool) -> Router {
     Router::new()
@@ -12,6 +12,8 @@ pub fn create_router(pool: SqlitePool) -> Router {
         .route("/api/accounts/:id/calls", post(calls::open_call))
         .route("/api/accounts/:id/share-lots", get(calls::list_share_lots).post(share_lots::create_manual_lot))
         .route("/api/trades/calls/:id/close", post(calls::close_call))
+        .route("/api/dashboard", get(dashboard::get_dashboard))
+        .route("/api/history", get(history::get_history))
         .layer(CorsLayer::permissive())
         .with_state(pool)
 }
