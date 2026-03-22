@@ -1,65 +1,32 @@
-import Image from "next/image";
+'use client';
+import { useEffect, useState } from 'react';
+import { MetricCard } from '@/components/dashboard/MetricCard';
+import { ActivePositions } from '@/components/dashboard/ActivePositions';
+import { api } from '@/lib/api';
+import { formatCurrency, formatPercent } from '@/lib/utils';
+import { useAccounts } from '@/contexts/AccountContext';
+import type { DashboardData } from '@/lib/types';
 
-export default function Home() {
+export default function DashboardPage() {
+  const { selectedAccountId } = useAccounts();
+  const [data, setData] = useState<DashboardData | null>(null);
+
+  useEffect(() => {
+    api.dashboard(selectedAccountId ?? undefined).then(setData);
+  }, [selectedAccountId]);
+
+  if (!data) return <div className="text-muted-foreground">Loading...</div>;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Dashboard</h1>
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <MetricCard title="Total Premium Collected" value={formatCurrency(data.total_premium_collected)} subtitle="All closed trades" />
+        <MetricCard title="Capital Deployed" value={formatCurrency(data.total_capital_deployed)} subtitle="Open positions" />
+        <MetricCard title="Realized Yield (Ann.)" value={formatPercent(data.realized_annualized_yield)} subtitle="Closed trades" />
+        <MetricCard title="Open Yield (Ann.)" value={formatPercent(data.open_annualized_yield)} subtitle="Current open trades" />
+      </div>
+      <ActivePositions openTrades={data.open_trades} activeLots={data.active_share_lots} />
     </div>
   );
 }
