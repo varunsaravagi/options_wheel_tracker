@@ -7,6 +7,7 @@ pub fn create_router(pool: SqlitePool) -> Router {
     Router::new()
         .route("/api/accounts", get(accounts::list_accounts).post(accounts::create_account))
         .route("/api/accounts/:id", delete(accounts::delete_account))
+        .route("/api/accounts/:id/purge", delete(accounts::purge_account_data))
         .route("/api/accounts/:id/puts", post(puts::open_put))
         .route("/api/trades/puts/:id/close", post(puts::close_put))
         .route("/api/accounts/:id/calls", post(calls::open_call))
