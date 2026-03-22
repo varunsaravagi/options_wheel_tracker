@@ -19,6 +19,7 @@ pub struct OpenPut {
     pub open_date: String,
     pub premium_received: f64,
     pub fees_open: f64,
+    pub quantity: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -44,6 +45,7 @@ pub async fn open_put(
         premium_received: payload.premium_received,
         fees_open: payload.fees_open,
         share_lot_id: None,
+        quantity: payload.quantity,
     };
     let trade = Trade::create(&pool, &input).await?;
     Ok((StatusCode::CREATED, Json(trade)))
@@ -111,16 +113,19 @@ pub async fn close_put(
             .map_err(AppError::Database)?;
 
             // Calculate adjusted cost basis
-            let adjusted_cb = trade.strike_price - (trade.premium_received - trade.fees_open) / 100.0;
+            let net_per_share = (trade.premium_received - trade.fees_open) / (100.0 * trade.quantity as f64);
+            let adjusted_cb = trade.strike_price - net_per_share;
+            let lot_quantity = 100 * trade.quantity;
 
             // Create share lot within the transaction
             let lot = sqlx::query_as::<_, ShareLot>(
-                "INSERT INTO share_lots (account_id, ticker, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id)
-                 VALUES (?, ?, ?, ?, ?, 'ASSIGNED', ?)
+                "INSERT INTO share_lots (account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id)
+                 VALUES (?, ?, ?, ?, ?, ?, 'ASSIGNED', ?)
                  RETURNING id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, created_at"
             )
             .bind(trade.account_id)
             .bind(&trade.ticker)
+            .bind(lot_quantity)
             .bind(trade.strike_price)
             .bind(adjusted_cb)
             .bind(&close_date)

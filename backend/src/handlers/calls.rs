@@ -20,6 +20,7 @@ pub struct OpenCall {
     pub open_date: String,
     pub premium_received: f64,
     pub fees_open: f64,
+    pub quantity: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -61,6 +62,7 @@ pub async fn open_call(
         premium_received: payload.premium_received,
         fees_open: payload.fees_open,
         share_lot_id: Some(payload.share_lot_id),
+        quantity: payload.quantity,
     };
     let trade = Trade::create(&pool, &input).await?;
     Ok((StatusCode::CREATED, Json(trade)))

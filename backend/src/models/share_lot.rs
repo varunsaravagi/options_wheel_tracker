@@ -71,10 +71,12 @@ impl ShareLot {
     }
 
     pub async fn reduce_cost_basis(pool: &SqlitePool, id: i64, premium_total: f64) -> Result<(), AppError> {
+        let lot = Self::get(pool, id).await?;
+        let per_share = premium_total / lot.quantity as f64;
         let result = sqlx::query(
             "UPDATE share_lots SET adjusted_cost_basis = adjusted_cost_basis - ? WHERE id = ?"
         )
-        .bind(premium_total / 100.0)
+        .bind(per_share)
         .bind(id)
         .execute(pool)
         .await?;

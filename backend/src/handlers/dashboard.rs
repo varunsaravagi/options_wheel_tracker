@@ -34,16 +34,17 @@ fn today() -> String {
 }
 
 async fn get_capital_for_trade(pool: &SqlitePool, trade: &Trade) -> f64 {
+    let qty = trade.quantity as f64;
     if trade.trade_type == "PUT" {
-        trade.strike_price * 100.0
+        trade.strike_price * 100.0 * qty
     } else {
         // CALL: look up linked lot's adjusted_cost_basis
         if let Some(lot_id) = trade.share_lot_id {
             if let Ok(lot) = ShareLot::get(pool, lot_id).await {
-                return lot.adjusted_cost_basis * 100.0;
+                return lot.adjusted_cost_basis * 100.0 * qty;
             }
         }
-        trade.strike_price * 100.0
+        trade.strike_price * 100.0 * qty
     }
 }
 

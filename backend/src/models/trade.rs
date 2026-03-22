@@ -18,6 +18,7 @@ pub struct Trade {
     pub close_premium: Option<f64>,
     pub fees_close: Option<f64>,
     pub share_lot_id: Option<i64>,
+    pub quantity: i64,
     pub created_at: String,
 }
 
@@ -32,6 +33,7 @@ pub struct CreateTrade {
     pub premium_received: f64,
     pub fees_open: f64,
     pub share_lot_id: Option<i64>,
+    pub quantity: Option<i64>,
 }
 
 impl Trade {
@@ -45,10 +47,11 @@ impl Trade {
     }
 
     pub async fn create(pool: &SqlitePool, input: &CreateTrade) -> Result<Trade, AppError> {
+        let qty = input.quantity.unwrap_or(1);
         let trade = sqlx::query_as::<_, Trade>(
-            "INSERT INTO trades (account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, share_lot_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-             RETURNING id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, created_at"
+            "INSERT INTO trades (account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, share_lot_id, quantity)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             RETURNING id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at"
         )
         .bind(input.account_id)
         .bind(&input.trade_type)
@@ -59,6 +62,7 @@ impl Trade {
         .bind(input.premium_received)
         .bind(input.fees_open)
         .bind(input.share_lot_id)
+        .bind(qty)
         .fetch_one(pool)
         .await?;
         Ok(trade)
@@ -66,7 +70,7 @@ impl Trade {
 
     pub async fn get(pool: &SqlitePool, id: i64) -> Result<Trade, AppError> {
         let trade = sqlx::query_as::<_, Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, created_at
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at
              FROM trades WHERE id = ?"
         )
         .bind(id)
@@ -107,7 +111,7 @@ impl Trade {
 
     pub async fn list_open(pool: &SqlitePool, account_id: i64) -> Result<Vec<Trade>, AppError> {
         let trades = sqlx::query_as::<_, Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, created_at
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at
              FROM trades WHERE account_id = ? AND status = 'OPEN'"
         )
         .bind(account_id)
@@ -124,7 +128,7 @@ impl Trade {
         date_to: Option<&str>,
     ) -> Result<Vec<Trade>, AppError> {
         let all = sqlx::query_as::<_, Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, created_at
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at
              FROM trades ORDER BY open_date DESC"
         )
         .fetch_all(pool)
@@ -169,6 +173,7 @@ mod tests {
             premium_received: 200.0,
             fees_open: 1.30,
             share_lot_id: None,
+            quantity: None,
         };
 
         let trade = Trade::create(&pool, &input).await.unwrap();
@@ -190,6 +195,7 @@ mod tests {
             premium_received: 200.0,
             fees_open: 1.30,
             share_lot_id: None,
+            quantity: None,
         };
 
         let trade = Trade::create(&pool, &input).await.unwrap();
@@ -213,6 +219,7 @@ mod tests {
             premium_received: 200.0,
             fees_open: 1.30,
             share_lot_id: None,
+            quantity: None,
         };
 
         let trade = Trade::create(&pool, &input).await.unwrap();

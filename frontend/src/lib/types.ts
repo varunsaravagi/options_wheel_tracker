@@ -22,6 +22,7 @@ export interface Trade {
   close_premium: number | null;
   fees_close: number | null;
   share_lot_id: number | null;
+  quantity: number;
   created_at: string;
 }
 
