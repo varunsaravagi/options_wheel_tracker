@@ -16,5 +16,8 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 thiserror = "1"
 
+[profile.dev]
+debug = 0
+
 [dev-dependencies]
 axum-test = "15"
