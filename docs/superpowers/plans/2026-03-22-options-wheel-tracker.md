@@ -3069,7 +3069,7 @@ Create `/root/options_wheel_tracker/Makefile`:
 ```makefile
 .PHONY: refresh-dev start-prod stop-prod start-dev stop-dev
 
-PROD_DIR := /root/options_wheel_tracker/prod
+PROD_DIR := /root/options_wheel_tracker
 DEV_DIR  := /root/options_wheel_tracker/dev
 
 refresh-dev:
