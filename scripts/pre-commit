@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Pre-commit hook: enforces formatting and linting before commits.
+# Runs cargo fmt check on backend, ESLint on frontend (if relevant files changed).
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Collect staged files
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+
+# --- Backend: cargo fmt ---
+BACKEND_CHANGED=$(echo "$STAGED" | grep '^backend/.*\.rs$' || true)
+if [ -n "$BACKEND_CHANGED" ]; then
+    echo "[pre-commit] Checking Rust formatting..."
+    source ~/.cargo/env 2>/dev/null || true
+    (cd "$REPO_ROOT/backend" && cargo fmt --check 2>&1) || {
+        echo ""
+        echo "ERROR: Rust formatting check failed."
+        echo "Run 'cargo fmt' in backend/ to fix, then re-stage and commit."
+        exit 1
+    }
+    echo "[pre-commit] Rust formatting OK"
+fi
+
+# --- Frontend: ESLint ---
+FRONTEND_CHANGED=$(echo "$STAGED" | grep '^frontend/src/.*\.\(ts\|tsx\|js\|jsx\)$' || true)
+if [ -n "$FRONTEND_CHANGED" ]; then
+    echo "[pre-commit] Running ESLint on frontend..."
+    (cd "$REPO_ROOT/frontend" && npx eslint --max-warnings 0 $FRONTEND_CHANGED 2>&1) || {
+        echo ""
+        echo "ERROR: ESLint check failed. Fix the errors above, then re-stage and commit."
+        exit 1
+    }
+    echo "[pre-commit] ESLint OK"
+fi
+
+# --- Migration smoke test ---
+MIGRATION_CHANGED=$(echo "$STAGED" | grep '^backend/src/db/migrations/.*\.sql$' || true)
+if [ -n "$MIGRATION_CHANGED" ]; then
+    echo "[pre-commit] Running migration smoke test..."
+    "$REPO_ROOT/scripts/test-migration.sh" || {
+        echo ""
+        echo "ERROR: Migration smoke test failed. The migration does not apply cleanly"
+        echo "against a copy of the current dev database."
+        exit 1
+    }
+    echo "[pre-commit] Migration smoke test OK"
+fi
+
+echo "[pre-commit] All checks passed"
