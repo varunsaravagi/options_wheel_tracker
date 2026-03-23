@@ -14,6 +14,8 @@ pub struct ShareLot {
     pub acquisition_type: String,
     pub source_trade_id: Option<i64>,
     pub status: String,
+    pub sale_price: Option<f64>,
+    pub sale_date: Option<String>,
     pub created_at: String,
 }
 
@@ -34,7 +36,7 @@ impl ShareLot {
         let lot = sqlx::query_as::<_, ShareLot>(
             "INSERT INTO share_lots (account_id, ticker, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id)
              VALUES (?, ?, ?, ?, ?, ?, ?)
-             RETURNING id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, created_at"
+             RETURNING id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, sale_price, sale_date, created_at"
         )
         .bind(input.account_id)
         .bind(&input.ticker)
@@ -50,7 +52,7 @@ impl ShareLot {
 
     pub async fn get(pool: &SqlitePool, id: i64) -> Result<ShareLot, AppError> {
         let lot = sqlx::query_as::<_, ShareLot>(
-            "SELECT id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, created_at
+            "SELECT id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, sale_price, sale_date, created_at
              FROM share_lots WHERE id = ?"
         )
         .bind(id)
@@ -61,7 +63,7 @@ impl ShareLot {
 
     pub async fn list_active(pool: &SqlitePool, account_id: i64) -> Result<Vec<ShareLot>, AppError> {
         let lots = sqlx::query_as::<_, ShareLot>(
-            "SELECT id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, created_at
+            "SELECT id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, sale_price, sale_date, created_at
              FROM share_lots WHERE account_id = ? AND status = 'ACTIVE' ORDER BY acquisition_date DESC"
         )
         .bind(account_id)
@@ -97,6 +99,20 @@ impl ShareLot {
             return Err(AppError::NotFound);
         }
         Ok(())
+    }
+
+    pub async fn mark_sold(pool: &SqlitePool, id: i64, sale_price: f64, sale_date: &str) -> Result<ShareLot, AppError> {
+        let lot = sqlx::query_as::<_, ShareLot>(
+            "UPDATE share_lots SET status = 'SOLD', sale_price = ?, sale_date = ?
+             WHERE id = ? AND status = 'ACTIVE'
+             RETURNING id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, sale_price, sale_date, created_at"
+        )
+        .bind(sale_price)
+        .bind(sale_date)
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+        lot.ok_or(AppError::NotFound)
     }
 }
 

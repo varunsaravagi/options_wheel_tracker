@@ -27,7 +27,7 @@ export interface Trade {
 }
 
 export type AcquisitionType = 'MANUAL' | 'ASSIGNED';
-export type LotStatus = 'ACTIVE' | 'CALLED_AWAY';
+export type LotStatus = 'ACTIVE' | 'CALLED_AWAY' | 'SOLD';
 
 export interface ShareLot {
   id: number;
@@ -40,6 +40,8 @@ export interface ShareLot {
   acquisition_type: AcquisitionType;
   source_trade_id: number | null;
   status: LotStatus;
+  sale_price: number | null;
+  sale_date: string | null;
   created_at: string;
 }
 

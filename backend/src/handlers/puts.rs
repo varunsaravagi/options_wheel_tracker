@@ -121,7 +121,7 @@ pub async fn close_put(
             let lot = sqlx::query_as::<_, ShareLot>(
                 "INSERT INTO share_lots (account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id)
                  VALUES (?, ?, ?, ?, ?, ?, 'ASSIGNED', ?)
-                 RETURNING id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, created_at"
+                 RETURNING id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, sale_price, sale_date, created_at"
             )
             .bind(trade.account_id)
             .bind(&trade.ticker)

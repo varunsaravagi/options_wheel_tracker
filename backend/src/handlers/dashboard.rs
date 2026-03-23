@@ -106,7 +106,7 @@ pub async fn get_dashboard(
     } else {
         // No account_id filter: fetch all active lots via runtime query
         sqlx::query_as::<_, ShareLot>(
-            "SELECT id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, created_at
+            "SELECT id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, sale_price, sale_date, created_at
              FROM share_lots WHERE status = 'ACTIVE' ORDER BY acquisition_date DESC"
         )
         .fetch_all(&pool)

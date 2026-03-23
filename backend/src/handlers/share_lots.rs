@@ -11,6 +11,24 @@ pub struct CreateManualLot {
     pub acquisition_date: String,
 }
 
+#[derive(Deserialize)]
+pub struct SellLot {
+    pub sale_price: f64,
+    pub sale_date: String,
+}
+
+pub async fn sell_share_lot(
+    State(pool): State<SqlitePool>,
+    Path(id): Path<i64>,
+    Json(payload): Json<SellLot>,
+) -> Result<Json<ShareLot>, AppError> {
+    if payload.sale_price <= 0.0 {
+        return Err(AppError::BadRequest("sale_price must be positive".to_string()));
+    }
+    let lot = ShareLot::mark_sold(&pool, id, payload.sale_price, &payload.sale_date).await?;
+    Ok(Json(lot))
+}
+
 pub async fn create_manual_lot(
     State(pool): State<SqlitePool>,
     Path(account_id): Path<i64>,

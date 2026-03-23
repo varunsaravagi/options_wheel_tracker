@@ -199,11 +199,44 @@ def main():
 
         # Skip actions that aren't part of the wheel strategy.
         # "Buy to Open" is skipped because we only sell options (wheel = sell-side).
-        # Stock buys/sells, dividends, and account-level entries are irrelevant.
-        if action in ("Buy", "Sell", "Journal", "Cash Dividend", "Credit Interest",
+        # Stock buys, dividends, and account-level entries are irrelevant.
+        # Note: "Sell" of shares (non-option) IS handled below as a manual lot sale.
+        if action in ("Buy", "Journal", "Cash Dividend", "Credit Interest",
                        "Reinvest Dividend", "Reinvest Shares", "Wire Sent",
                        "Service Fee", "Misc Cash Entry", "Buy to Open"):
             stats["skipped"] += 1
+            continue
+
+        # "Sell" of shares (not options) = manually selling a share lot
+        if action == "Sell":
+            symbol_info = parse_symbol(symbol)
+            if symbol_info:
+                # This is an option sell (Sell to Open is separate), skip it
+                stats["skipped"] += 1
+                continue
+            # Plain stock sale — find the active lot for this ticker and mark it sold
+            ticker = symbol.strip()
+            if not ticker:
+                stats["skipped"] += 1
+                continue
+            lots = api_request(f"/api/accounts/{account_id}/share-lots")
+            lot = None
+            if lots:
+                for l in lots:
+                    if l["ticker"] == ticker and l["status"] == "ACTIVE":
+                        lot = l
+                        break
+            if not lot:
+                print(f"  WARN row {i}: No active share lot for {ticker} to sell")
+                stats["skipped"] += 1
+                continue
+            data = {"sale_price": price, "sale_date": date}
+            result = api_request(f"/api/share-lots/{lot['id']}/sell", "PUT", data)
+            if result:
+                print(f"  SOLD share lot {ticker} @ ${price} on {date}")
+                stats["closed"] += 1
+            else:
+                stats["errors"] += 1
             continue
 
         symbol_info = parse_symbol(symbol)
