@@ -1,10 +1,13 @@
-use axum::{extract::{Query, State}, Json};
-use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use crate::errors::AppError;
 use crate::models::share_lot::ShareLot;
 use crate::models::trade::Trade;
+use axum::{
+    extract::{Query, State},
+    Json,
+};
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
 #[derive(Deserialize)]
 pub struct DashboardQuery {
@@ -72,7 +75,11 @@ pub async fn get_dashboard(
 
         if trade.status == "OPEN" {
             let days = days_between(&trade.open_date, &today_str);
-            let annualized = if capital > 0.0 { (net / capital) * (365.0 / days) } else { 0.0 };
+            let annualized = if capital > 0.0 {
+                (net / capital) * (365.0 / days)
+            } else {
+                0.0
+            };
             open_weighted_sum += annualized * capital;
             open_capital_sum += capital;
             open_trades.push(trade.clone());
@@ -82,7 +89,11 @@ pub async fn get_dashboard(
             total_premium += net;
             let close_date = trade.close_date.as_deref().unwrap_or(&today_str);
             let days = days_between(&trade.open_date, close_date);
-            let annualized = if capital > 0.0 { (net / capital) * (365.0 / days) } else { 0.0 };
+            let annualized = if capital > 0.0 {
+                (net / capital) * (365.0 / days)
+            } else {
+                0.0
+            };
             realized_weighted_sum += annualized * capital;
             realized_capital_sum += capital;
         }
@@ -131,17 +142,22 @@ pub async fn get_dashboard(
 
 #[cfg(test)]
 mod tests {
+    use crate::{db, routes::create_router};
     use axum_test::TestServer;
     use serde_json::json;
-    use crate::{db, routes::create_router};
 
     #[tokio::test]
     async fn test_dashboard_totals() {
         let pool = db::init_pool("sqlite::memory:").await;
         db::run_migrations(&pool).await;
         let srv = TestServer::new(create_router(pool)).unwrap();
-        let acct_id = srv.post("/api/accounts").json(&json!({"name":"T"})).await
-            .json::<serde_json::Value>()["id"].as_i64().unwrap();
+        let acct_id = srv
+            .post("/api/accounts")
+            .json(&json!({"name":"T"}))
+            .await
+            .json::<serde_json::Value>()["id"]
+            .as_i64()
+            .unwrap();
         srv.post(&format!("/api/accounts/{}/puts", acct_id))
             .json(&json!({"ticker":"AAPL","strike_price":150.0,"expiry_date":"2025-12-19","open_date":"2025-01-10","premium_received":200.0,"fees_open":1.3})).await;
         let res = srv.get("/api/dashboard").await;

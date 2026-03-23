@@ -1,4 +1,8 @@
-use axum::{extract::{Path, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::SqlitePool;
@@ -46,7 +50,9 @@ pub async fn open_call(
     // Verify the lot belongs to this account and is ACTIVE
     let lot = ShareLot::get(&pool, payload.share_lot_id).await?;
     if lot.account_id != account_id {
-        return Err(AppError::BadRequest("Share lot does not belong to this account".to_string()));
+        return Err(AppError::BadRequest(
+            "Share lot does not belong to this account".to_string(),
+        ));
     }
     if lot.status != "ACTIVE" {
         return Err(AppError::BadRequest("Share lot is not ACTIVE".to_string()));
@@ -133,7 +139,10 @@ pub async fn close_call(
 
             Ok(Json(json!(updated)))
         }
-        _ => Err(AppError::BadRequest(format!("Invalid action: {}", payload.action))),
+        _ => Err(AppError::BadRequest(format!(
+            "Invalid action: {}",
+            payload.action
+        ))),
     }
 }
 
@@ -154,10 +163,7 @@ mod tests {
         let s = TestServer::new(create_router(pool.clone())).unwrap();
 
         // Create account
-        let res = s
-            .post("/api/accounts")
-            .json(&json!({"name": "Test"}))
-            .await;
+        let res = s.post("/api/accounts").json(&json!({"name": "Test"})).await;
         let acct_id = res.json::<serde_json::Value>()["id"].as_i64().unwrap();
 
         // Open PUT

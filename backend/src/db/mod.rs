@@ -1,4 +1,7 @@
-use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions}, SqlitePool};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    SqlitePool,
+};
 use std::str::FromStr;
 
 pub type Pool = SqlitePool;

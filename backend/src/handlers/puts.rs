@@ -1,4 +1,8 @@
-use axum::{extract::{Path, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::SqlitePool;
@@ -67,21 +71,14 @@ pub async fn close_put(
 
     match payload.action.as_str() {
         "EXPIRED" => {
-            let updated = Trade::close(
-                &pool,
-                trade_id,
-                "EXPIRED",
-                None,
-                None,
-                payload.close_date,
-            )
-            .await?;
+            let updated =
+                Trade::close(&pool, trade_id, "EXPIRED", None, None, payload.close_date).await?;
             Ok(Json(json!(updated)))
         }
         "BOUGHT_BACK" => {
-            let close_premium = payload
-                .close_premium
-                .ok_or_else(|| AppError::BadRequest("close_premium required for BOUGHT_BACK".to_string()))?;
+            let close_premium = payload.close_premium.ok_or_else(|| {
+                AppError::BadRequest("close_premium required for BOUGHT_BACK".to_string())
+            })?;
             let updated = Trade::close(
                 &pool,
                 trade_id,
@@ -94,9 +91,9 @@ pub async fn close_put(
             Ok(Json(json!(updated)))
         }
         "ASSIGNED" => {
-            let close_date = payload.close_date.unwrap_or_else(|| {
-                chrono::Local::now().format("%Y-%m-%d").to_string()
-            });
+            let close_date = payload
+                .close_date
+                .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
 
             let mut tx = pool.begin().await.map_err(AppError::Database)?;
 
@@ -113,7 +110,8 @@ pub async fn close_put(
             .map_err(AppError::Database)?;
 
             // Calculate adjusted cost basis
-            let net_per_share = (trade.premium_received - trade.fees_open) / (100.0 * trade.quantity as f64);
+            let net_per_share =
+                (trade.premium_received - trade.fees_open) / (100.0 * trade.quantity as f64);
             let adjusted_cb = trade.strike_price - net_per_share;
             let lot_quantity = 100 * trade.quantity;
 
@@ -144,7 +142,10 @@ pub async fn close_put(
                 "share_lot": lot
             })))
         }
-        _ => Err(AppError::BadRequest(format!("Invalid action: {}", payload.action))),
+        _ => Err(AppError::BadRequest(format!(
+            "Invalid action: {}",
+            payload.action
+        ))),
     }
 }
 
@@ -162,10 +163,7 @@ mod tests {
         db::run_migrations(&pool).await;
         let app = create_router(pool.clone());
         let s = TestServer::new(app).unwrap();
-        let res = s
-            .post("/api/accounts")
-            .json(&json!({"name": "Test"}))
-            .await;
+        let res = s.post("/api/accounts").json(&json!({"name": "Test"})).await;
         let id = res.json::<serde_json::Value>()["id"].as_i64().unwrap();
         let s2 = TestServer::new(create_router(pool)).unwrap();
         (s2, id)
@@ -205,7 +203,9 @@ mod tests {
                 "fees_open": 1.30
             }))
             .await;
-        let trade_id = create_res.json::<serde_json::Value>()["id"].as_i64().unwrap();
+        let trade_id = create_res.json::<serde_json::Value>()["id"]
+            .as_i64()
+            .unwrap();
 
         let res = server
             .post(&format!("/api/trades/puts/{}/close", trade_id))
@@ -233,7 +233,9 @@ mod tests {
                 "fees_open": 1.30
             }))
             .await;
-        let trade_id = create_res.json::<serde_json::Value>()["id"].as_i64().unwrap();
+        let trade_id = create_res.json::<serde_json::Value>()["id"]
+            .as_i64()
+            .unwrap();
 
         let res = server
             .post(&format!("/api/trades/puts/{}/close", trade_id))

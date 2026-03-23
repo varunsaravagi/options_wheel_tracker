@@ -1,6 +1,6 @@
+use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use crate::errors::AppError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Trade {
@@ -87,9 +87,8 @@ impl Trade {
         fees_close: Option<f64>,
         close_date: Option<String>,
     ) -> Result<Trade, AppError> {
-        let date = close_date.unwrap_or_else(|| {
-            chrono::Local::now().format("%Y-%m-%d").to_string()
-        });
+        let date =
+            close_date.unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
 
         let result = sqlx::query(
             "UPDATE trades SET status = ?, close_premium = ?, fees_close = ?, close_date = ? WHERE id = ?"
@@ -199,9 +198,16 @@ mod tests {
         };
 
         let trade = Trade::create(&pool, &input).await.unwrap();
-        let closed = Trade::close(&pool, trade.id, "EXPIRED", None, None, Some("2025-02-21".to_string()))
-            .await
-            .unwrap();
+        let closed = Trade::close(
+            &pool,
+            trade.id,
+            "EXPIRED",
+            None,
+            None,
+            Some("2025-02-21".to_string()),
+        )
+        .await
+        .unwrap();
         assert_eq!(closed.status, "EXPIRED");
     }
 
@@ -223,9 +229,16 @@ mod tests {
         };
 
         let trade = Trade::create(&pool, &input).await.unwrap();
-        let closed = Trade::close(&pool, trade.id, "EXPIRED", None, None, Some("2025-02-21".to_string()))
-            .await
-            .unwrap();
+        let closed = Trade::close(
+            &pool,
+            trade.id,
+            "EXPIRED",
+            None,
+            None,
+            Some("2025-02-21".to_string()),
+        )
+        .await
+        .unwrap();
 
         let net = closed.net_premium().unwrap();
         assert!((net - 198.70).abs() < 0.001);

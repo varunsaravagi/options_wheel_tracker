@@ -1,9 +1,9 @@
+mod config;
 mod db;
 mod errors;
-mod models;
 mod handlers;
+mod models;
 mod routes;
-mod config;
 
 use dotenvy::dotenv;
 use std::env;

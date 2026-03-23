@@ -1,7 +1,10 @@
-use axum::{extract::{Query, State}, Json};
+use crate::{errors::AppError, models::trade::Trade};
+use axum::{
+    extract::{Query, State},
+    Json,
+};
 use serde::Deserialize;
 use sqlx::SqlitePool;
-use crate::{errors::AppError, models::trade::Trade};
 
 #[derive(Deserialize)]
 pub struct HistoryQuery {
@@ -21,5 +24,7 @@ pub async fn get_history(
         params.ticker.as_deref(),
         params.date_from.as_deref(),
         params.date_to.as_deref(),
-    ).await.map(Json)
+    )
+    .await
+    .map(Json)
 }

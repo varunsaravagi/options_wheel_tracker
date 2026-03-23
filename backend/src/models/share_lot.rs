@@ -1,6 +1,6 @@
+use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use crate::errors::AppError;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ShareLot {
@@ -32,7 +32,9 @@ pub struct CreateShareLot {
 
 impl ShareLot {
     pub async fn create(pool: &SqlitePool, input: &CreateShareLot) -> Result<ShareLot, AppError> {
-        let adjusted = input.adjusted_cost_basis.unwrap_or(input.original_cost_basis);
+        let adjusted = input
+            .adjusted_cost_basis
+            .unwrap_or(input.original_cost_basis);
         let lot = sqlx::query_as::<_, ShareLot>(
             "INSERT INTO share_lots (account_id, ticker, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id)
              VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -61,7 +63,10 @@ impl ShareLot {
         lot.ok_or(AppError::NotFound)
     }
 
-    pub async fn list_active(pool: &SqlitePool, account_id: i64) -> Result<Vec<ShareLot>, AppError> {
+    pub async fn list_active(
+        pool: &SqlitePool,
+        account_id: i64,
+    ) -> Result<Vec<ShareLot>, AppError> {
         let lots = sqlx::query_as::<_, ShareLot>(
             "SELECT id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, sale_price, sale_date, created_at
              FROM share_lots WHERE account_id = ? AND status = 'ACTIVE' ORDER BY acquisition_date DESC"
@@ -72,11 +77,15 @@ impl ShareLot {
         Ok(lots)
     }
 
-    pub async fn reduce_cost_basis(pool: &SqlitePool, id: i64, premium_total: f64) -> Result<(), AppError> {
+    pub async fn reduce_cost_basis(
+        pool: &SqlitePool,
+        id: i64,
+        premium_total: f64,
+    ) -> Result<(), AppError> {
         let lot = Self::get(pool, id).await?;
         let per_share = premium_total / lot.quantity as f64;
         let result = sqlx::query(
-            "UPDATE share_lots SET adjusted_cost_basis = adjusted_cost_basis - ? WHERE id = ?"
+            "UPDATE share_lots SET adjusted_cost_basis = adjusted_cost_basis - ? WHERE id = ?",
         )
         .bind(per_share)
         .bind(id)
@@ -89,19 +98,22 @@ impl ShareLot {
     }
 
     pub async fn mark_called_away(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
-        let result = sqlx::query(
-            "UPDATE share_lots SET status = 'CALLED_AWAY' WHERE id = ?"
-        )
-        .bind(id)
-        .execute(pool)
-        .await?;
+        let result = sqlx::query("UPDATE share_lots SET status = 'CALLED_AWAY' WHERE id = ?")
+            .bind(id)
+            .execute(pool)
+            .await?;
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound);
         }
         Ok(())
     }
 
-    pub async fn mark_sold(pool: &SqlitePool, id: i64, sale_price: f64, sale_date: &str) -> Result<ShareLot, AppError> {
+    pub async fn mark_sold(
+        pool: &SqlitePool,
+        id: i64,
+        sale_price: f64,
+        sale_date: &str,
+    ) -> Result<ShareLot, AppError> {
         let lot = sqlx::query_as::<_, ShareLot>(
             "UPDATE share_lots SET status = 'SOLD', sale_price = ?, sale_date = ?
              WHERE id = ? AND status = 'ACTIVE'
@@ -167,7 +179,9 @@ mod tests {
         };
 
         let lot = ShareLot::create(&pool, &input).await.unwrap();
-        ShareLot::reduce_cost_basis(&pool, lot.id, 50.0).await.unwrap();
+        ShareLot::reduce_cost_basis(&pool, lot.id, 50.0)
+            .await
+            .unwrap();
 
         let updated = ShareLot::get(&pool, lot.id).await.unwrap();
         assert!((updated.adjusted_cost_basis - 149.50).abs() < 0.001);

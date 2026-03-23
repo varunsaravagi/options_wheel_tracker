@@ -1,6 +1,6 @@
+use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use crate::errors::AppError;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Account {
@@ -17,7 +17,7 @@ pub struct CreateAccount {
 impl Account {
     pub async fn create(pool: &SqlitePool, name: &str) -> Result<Account, AppError> {
         let account = sqlx::query_as::<_, Account>(
-            "INSERT INTO accounts (name) VALUES (?) RETURNING id, name, created_at"
+            "INSERT INTO accounts (name) VALUES (?) RETURNING id, name, created_at",
         )
         .bind(name)
         .fetch_one(pool)
@@ -27,7 +27,7 @@ impl Account {
 
     pub async fn list(pool: &SqlitePool) -> Result<Vec<Account>, AppError> {
         let accounts = sqlx::query_as::<_, Account>(
-            "SELECT id, name, created_at FROM accounts ORDER BY created_at"
+            "SELECT id, name, created_at FROM accounts ORDER BY created_at",
         )
         .fetch_all(pool)
         .await?;
