@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ActivePositions } from '@/components/dashboard/ActivePositions';
 import { api } from '@/lib/api';
@@ -11,9 +11,13 @@ export default function DashboardPage() {
   const { selectedAccountId } = useAccounts();
   const [data, setData] = useState<DashboardData | null>(null);
 
-  useEffect(() => {
+  const refreshDashboard = useCallback(() => {
     api.dashboard(selectedAccountId ?? undefined).then(setData);
   }, [selectedAccountId]);
+
+  useEffect(() => {
+    refreshDashboard();
+  }, [refreshDashboard]);
 
   if (!data) return <div className="text-muted-foreground">Loading...</div>;
 
@@ -26,7 +30,7 @@ export default function DashboardPage() {
         <MetricCard title="Realized Yield (Ann.)" value={formatPercent(data.realized_annualized_yield)} subtitle="Closed trades" />
         <MetricCard title="Open Yield (Ann.)" value={formatPercent(data.open_annualized_yield)} subtitle="Current open trades" />
       </div>
-      <ActivePositions openTrades={data.open_trades} activeLots={data.active_share_lots} />
+      <ActivePositions openTrades={data.open_trades} activeLots={data.active_share_lots} onTradeClose={refreshDashboard} />
     </div>
   );
 }

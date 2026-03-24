@@ -124,6 +124,20 @@ pub async fn get_dashboard(
         .await?
     };
 
+    // Capital in active share lots (assigned puts or manual entries) is still deployed.
+    // Skip lots that have an open CALL against them — that capital is already counted
+    // via get_capital_for_trade for the CALL trade.
+    let open_call_lot_ids: Vec<i64> = open_trades
+        .iter()
+        .filter(|t| t.trade_type == "CALL")
+        .filter_map(|t| t.share_lot_id)
+        .collect();
+    for lot in &active_share_lots {
+        if !open_call_lot_ids.contains(&lot.id) {
+            total_capital_deployed += lot.adjusted_cost_basis * lot.quantity as f64;
+        }
+    }
+
     // Round yields to 2 decimal places
     let realized_annualized_yield = (realized_annualized_yield * 100.0).round() / 100.0;
     let open_annualized_yield = (open_annualized_yield * 100.0).round() / 100.0;
