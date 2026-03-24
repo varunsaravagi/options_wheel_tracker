@@ -2,14 +2,17 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency, daysToExpiry } from '@/lib/utils';
+import { ClosePutModal } from '@/components/trades/ClosePutModal';
+import { CloseCallModal } from '@/components/trades/CloseCallModal';
 import type { ShareLot, Trade } from '@/lib/types';
 
 interface Props {
   openTrades: Trade[];
   activeLots: ShareLot[];
+  onTradeClose?: () => void;
 }
 
-export function ActivePositions({ openTrades, activeLots }: Props) {
+export function ActivePositions({ openTrades, activeLots, onTradeClose }: Props) {
   return (
     <div className="space-y-6">
       <div>
@@ -23,11 +26,12 @@ export function ActivePositions({ openTrades, activeLots }: Props) {
               <TableHead>Expiry</TableHead>
               <TableHead>DTE</TableHead>
               <TableHead>Premium</TableHead>
+              <TableHead></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {openTrades.length === 0 && (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No open trades</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No open trades</TableCell></TableRow>
             )}
             {openTrades.map((t) => (
               <TableRow key={t.id}>
@@ -37,6 +41,12 @@ export function ActivePositions({ openTrades, activeLots }: Props) {
                 <TableCell>{t.expiry_date}</TableCell>
                 <TableCell>{daysToExpiry(t.expiry_date)}d</TableCell>
                 <TableCell>{formatCurrency(t.premium_received)}</TableCell>
+                <TableCell>
+                  {t.trade_type === 'PUT'
+                    ? <ClosePutModal tradeId={t.id} onClose={onTradeClose ?? (() => {})} />
+                    : <CloseCallModal tradeId={t.id} onClose={onTradeClose ?? (() => {})} />
+                  }
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

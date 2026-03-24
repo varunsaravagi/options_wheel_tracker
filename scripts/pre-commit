@@ -26,7 +26,8 @@ fi
 FRONTEND_CHANGED=$(echo "$STAGED" | grep '^frontend/src/.*\.\(ts\|tsx\|js\|jsx\)$' || true)
 if [ -n "$FRONTEND_CHANGED" ]; then
     echo "[pre-commit] Running ESLint on frontend..."
-    (cd "$REPO_ROOT/frontend" && npx eslint --max-warnings 0 $FRONTEND_CHANGED 2>&1) || {
+    FRONTEND_FILES=$(echo "$FRONTEND_CHANGED" | sed 's|^frontend/||')
+    (cd "$REPO_ROOT/frontend" && npx eslint --max-warnings 0 $FRONTEND_FILES 2>&1) || {
         echo ""
         echo "ERROR: ESLint check failed. Fix the errors above, then re-stage and commit."
         exit 1
