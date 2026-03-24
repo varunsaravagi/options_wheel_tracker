@@ -164,16 +164,27 @@ def comment_on_issue(issue_number: int, body: str):
 
 
 def get_retry_count(issue_number: int) -> int:
-    """Count how many times we've attempted this issue (by counting in-progress label additions)."""
-    # Check for a retry marker in issue comments
+    """Count [agent-retry] comments since the last [agent-reset] marker.
+
+    When a user re-labels an issue from manual back to todo, we post an
+    [agent-reset] comment to zero out the counter so old failures don't
+    immediately re-trigger the manual threshold.
+    """
     result = run([
         "gh", "issue", "view", str(issue_number),
         "--json", "comments",
-        "-q", '.comments[] | select(.body | startswith("[agent-retry]")) | .body'
+        "-q", '.comments[].body'
     ], cwd=str(REPO_ROOT), check=False)
     if result.returncode != 0:
         return 0
-    return result.stdout.strip().count("[agent-retry]")
+    # Walk comments in order; reset counter on [agent-reset], increment on [agent-retry]
+    count = 0
+    for line in result.stdout.strip().splitlines():
+        if line.startswith("[agent-reset]"):
+            count = 0
+        elif line.startswith("[agent-retry]"):
+            count += 1
+    return count
 
 
 def slugify(text: str) -> str:
@@ -331,14 +342,13 @@ def process_issue(issue: dict, dry_run: bool = False):
         log("  [DRY RUN] Would process this issue. Skipping.")
         return
 
-    # Check retry count
+    # Check retry count — reset if the issue was manually re-labeled to todo
     retries = get_retry_count(number)
     if retries >= MAX_RETRIES:
-        log(f"  Issue has {retries} retries — marking as manual")
-        set_label(number, "manual", "todo")
-        comment_on_issue(number,
-            f"This issue has failed {retries} times. Marking as `manual` for human intervention.")
-        return
+        # There are old failures but the issue is labeled todo again — user reset it
+        log(f"  Retry counter reset (was {retries}) — user re-queued the issue")
+        comment_on_issue(number, "[agent-reset] Retry counter reset — issue re-queued.")
+        retries = 0
 
     # Mark in-progress
     set_label(number, "in-progress", "todo")
