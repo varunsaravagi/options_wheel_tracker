@@ -291,14 +291,14 @@ def run_agent(worktree_path: Path, prompt: str) -> tuple[bool, str]:
     return success, output
 
 
-def check_pr_created(issue_number: int) -> bool:
-    """Check if a PR was created that references this issue."""
+def check_pr_created(issue_number: int, branch_name: str) -> bool:
+    """Check if a PR was created for this issue's branch."""
     result = run([
         "gh", "pr", "list",
         "--state", "open",
-        "--search", f"issue {issue_number}",
+        "--head", branch_name,
         "--json", "number",
-        "--limit", "5"
+        "--limit", "1"
     ], cwd=str(REPO_ROOT), check=False)
     if result.returncode != 0:
         return False
@@ -364,7 +364,7 @@ def process_issue(issue: dict, dry_run: bool = False):
     save_log(number, output)
 
     # Determine outcome
-    if success and check_pr_created(number):
+    if success and check_pr_created(number, branch_name):
         log(f"  Success — PR created for issue #{number}")
         set_label(number, "pr-ready", "in-progress")
     elif success:
