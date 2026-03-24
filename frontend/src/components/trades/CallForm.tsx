@@ -79,7 +79,11 @@ export function CallForm() {
             ) : (
               <Select value={selectedLotId || null} onValueChange={handleLotChange}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select lot" />
+                  <SelectValue placeholder="Select lot">
+                    {selectedLot
+                      ? `${selectedLot.ticker} — ${selectedLot.quantity} shares @ ${formatCurrency(selectedLot.adjusted_cost_basis)} adj. CB`
+                      : undefined}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {lots.map((l) => (
