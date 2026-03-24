@@ -228,11 +228,19 @@ def create_worktree(issue_number: int, branch_name: str) -> Path:
          str(worktree_path), "origin/dev"],
         cwd=str(REPO_ROOT))
 
-    # Install frontend dependencies if node_modules doesn't exist
+    # Install frontend dependencies if node_modules doesn't exist.
+    # Symlink from the main dev worktree if available (faster than npm install).
     frontend_nm = worktree_path / "frontend" / "node_modules"
-    if not frontend_nm.exists():
+    dev_nm = REPO_ROOT / "frontend" / "node_modules"
+    if not frontend_nm.exists() and dev_nm.exists():
+        log("  Symlinking node_modules from dev worktree...")
+        frontend_nm.symlink_to(dev_nm)
+    elif not frontend_nm.exists():
         log("  Installing frontend dependencies in worktree...")
-        run(["npm", "install"], cwd=str(worktree_path / "frontend"), check=False)
+        try:
+            run(["npm", "install"], cwd=str(worktree_path / "frontend"), check=False)
+        except FileNotFoundError:
+            log("  WARN: npm not found — agent will need to install deps if needed")
 
     return worktree_path
 

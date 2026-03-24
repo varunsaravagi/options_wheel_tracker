@@ -9,7 +9,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 LOG_DIR="$(dirname "$REPO_ROOT")/logs"
-CRON_CMD="cd $REPO_ROOT && /usr/bin/python3 scripts/process_issues.py >> $LOG_DIR/cron.log 2>&1"
+# Capture the current PATH so cron has access to npm, cargo, claude, gh, etc.
+# Cron runs with a minimal PATH that won't find these tools.
+CRON_PATH="$HOME/.cargo/bin:$HOME/.local/bin:$(dirname "$(which node 2>/dev/null || echo /usr/bin/node)"):$PATH"
+CRON_CMD="export PATH=$CRON_PATH && cd $REPO_ROOT && /usr/bin/python3 scripts/process_issues.py >> $LOG_DIR/cron.log 2>&1"
 CRON_ENTRY="*/30 * * * * $CRON_CMD"
 CRON_MARKER="process_issues.py"
 
