@@ -145,6 +145,7 @@ def has_pending_pr() -> bool:
     return len(issues) > 0
 
 
+
 def set_label(issue_number: int, add: str, remove: str | None = None):
     """Add a label and optionally remove another."""
     if remove:
@@ -467,6 +468,7 @@ def main():
     if has_pending_pr():
         log("A pr-ready issue is awaiting merge — skipping to avoid conflicts")
         return
+
 
     # Fetch todo issues
     issues = fetch_todo_issues()
