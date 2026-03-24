@@ -132,6 +132,19 @@ def is_in_progress() -> bool:
     return len(issues) > 0
 
 
+def has_pending_pr() -> bool:
+    """Check if any issue is labeled pr-ready (awaiting human merge)."""
+    result = run([
+        "gh", "issue", "list",
+        "--label", "pr-ready",
+        "--state", "open",
+        "--json", "number",
+        "--limit", "1"
+    ], cwd=str(REPO_ROOT))
+    issues = json.loads(result.stdout)
+    return len(issues) > 0
+
+
 def set_label(issue_number: int, add: str, remove: str | None = None):
     """Add a label and optionally remove another."""
     if remove:
@@ -434,9 +447,15 @@ def main():
         process_issue(issue, dry_run=args.dry_run)
         return
 
-    # Poll mode: check for in-progress first
+    # Poll mode: only one active agent issue at a time.
+    # Skip if anything is in-progress or if a PR is awaiting review.
+    # This prevents merge conflicts from multiple PRs branching off the same dev.
     if is_in_progress():
         log("An issue is already in-progress — skipping this run")
+        return
+
+    if has_pending_pr():
+        log("A pr-ready issue is awaiting merge — skipping to avoid conflicts")
         return
 
     # Fetch todo issues
