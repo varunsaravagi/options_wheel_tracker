@@ -21,6 +21,7 @@ export function TradeTable({ trades }: Props) {
         <TableRow>
           <TableHead>Ticker</TableHead>
           <TableHead>Type</TableHead>
+          <TableHead>Qty</TableHead>
           <TableHead>Strike</TableHead>
           <TableHead>Open Date</TableHead>
           <TableHead>Close Date</TableHead>
@@ -31,12 +32,13 @@ export function TradeTable({ trades }: Props) {
       </TableHeader>
       <TableBody>
         {trades.length === 0 && (
-          <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No trades found</TableCell></TableRow>
+          <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">No trades found</TableCell></TableRow>
         )}
         {trades.map((t) => (
           <TableRow key={t.id}>
             <TableCell className="font-medium">{t.ticker}</TableCell>
             <TableCell><Badge variant={t.trade_type === 'PUT' ? 'secondary' : 'default'}>{t.trade_type}</Badge></TableCell>
+            <TableCell>{t.quantity}</TableCell>
             <TableCell>{formatCurrency(t.strike_price)}</TableCell>
             <TableCell>{t.open_date}</TableCell>
             <TableCell>{t.close_date ?? '—'}</TableCell>

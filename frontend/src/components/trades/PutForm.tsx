@@ -14,7 +14,7 @@ export function PutForm() {
   const [form, setForm] = useState({
     ticker: '', strike_price: '', expiry_date: '',
     open_date: new Date().toISOString().split('T')[0],
-    premium_received: '', fees_open: '1.30',
+    premium_received: '', fees_open: '1.30', quantity: '1',
   });
   const [error, setError] = useState('');
 
@@ -31,6 +31,7 @@ export function PutForm() {
         strike_price: parseFloat(form.strike_price),
         premium_received: parseFloat(form.premium_received),
         fees_open: parseFloat(form.fees_open),
+        quantity: parseInt(form.quantity),
       });
       router.push('/');
     } catch (err: unknown) {
@@ -50,6 +51,7 @@ export function PutForm() {
             { label: 'Open Date', key: 'open_date', placeholder: '', type: 'date' },
             { label: 'Premium Received ($)', key: 'premium_received', placeholder: '200.00', type: 'number' },
             { label: 'Fees ($)', key: 'fees_open', placeholder: '1.30', type: 'number' },
+            { label: 'Quantity (contracts)', key: 'quantity', placeholder: '1', type: 'number' },
           ].map(({ label, key, placeholder, type }) => (
             <div key={key} className="space-y-1">
               <Label>{label}</Label>
