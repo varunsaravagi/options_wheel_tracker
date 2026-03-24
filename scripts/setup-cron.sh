@@ -17,15 +17,23 @@ mkdir -p "$LOG_DIR"
 
 case "${1:-status}" in
     install)
-        # Remove existing entry if present, then add
-        (crontab -l 2>/dev/null | grep -v "$CRON_MARKER"; echo "$CRON_ENTRY") | crontab -
+        # Remove existing entry if present, then add.
+        # Use temp file to avoid pipe issues with set -e and empty crontabs.
+        TMPFILE=$(mktemp)
+        crontab -l 2>/dev/null | grep -v "$CRON_MARKER" > "$TMPFILE" || true
+        echo "$CRON_ENTRY" >> "$TMPFILE"
+        crontab "$TMPFILE"
+        rm -f "$TMPFILE"
         echo "Cron job installed: runs every 30 minutes"
         echo "  Logs: $LOG_DIR/cron.log"
         echo "  Agent logs: $LOG_DIR/issue-*.log"
         crontab -l | grep "$CRON_MARKER"
         ;;
     remove)
-        crontab -l 2>/dev/null | grep -v "$CRON_MARKER" | crontab -
+        TMPFILE=$(mktemp)
+        crontab -l 2>/dev/null | grep -v "$CRON_MARKER" > "$TMPFILE" || true
+        crontab "$TMPFILE"
+        rm -f "$TMPFILE"
         echo "Cron job removed"
         ;;
     status)
