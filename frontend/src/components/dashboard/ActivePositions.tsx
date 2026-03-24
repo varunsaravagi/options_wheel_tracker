@@ -22,6 +22,7 @@ export function ActivePositions({ openTrades, activeLots, onTradeClose }: Props)
             <TableRow>
               <TableHead>Ticker</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>Qty</TableHead>
               <TableHead>Strike</TableHead>
               <TableHead>Expiry</TableHead>
               <TableHead>DTE</TableHead>
@@ -31,12 +32,13 @@ export function ActivePositions({ openTrades, activeLots, onTradeClose }: Props)
           </TableHeader>
           <TableBody>
             {openTrades.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No open trades</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No open trades</TableCell></TableRow>
             )}
             {openTrades.map((t) => (
               <TableRow key={t.id}>
                 <TableCell className="font-medium">{t.ticker}</TableCell>
                 <TableCell><Badge variant={t.trade_type === 'PUT' ? 'secondary' : 'default'}>{t.trade_type}</Badge></TableCell>
+                <TableCell>{t.quantity}</TableCell>
                 <TableCell>{formatCurrency(t.strike_price)}</TableCell>
                 <TableCell>{t.expiry_date}</TableCell>
                 <TableCell>{daysToExpiry(t.expiry_date)}d</TableCell>

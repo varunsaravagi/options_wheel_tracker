@@ -19,7 +19,7 @@ export function CallForm() {
   const [form, setForm] = useState({
     ticker: '', strike_price: '', expiry_date: '',
     open_date: new Date().toISOString().split('T')[0],
-    premium_received: '', fees_open: '1.30',
+    premium_received: '', fees_open: '1.30', quantity: '1',
   });
   const [error, setError] = useState('');
 
@@ -57,6 +57,7 @@ export function CallForm() {
         strike_price: parseFloat(form.strike_price),
         premium_received: parseFloat(form.premium_received),
         fees_open: parseFloat(form.fees_open),
+        quantity: parseInt(form.quantity),
       });
       router.push('/');
     } catch (err: unknown) {
@@ -78,7 +79,11 @@ export function CallForm() {
             ) : (
               <Select value={selectedLotId || null} onValueChange={handleLotChange}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select lot" />
+                  <SelectValue placeholder="Select lot">
+                    {selectedLot
+                      ? `${selectedLot.ticker} — ${selectedLot.quantity} shares @ ${formatCurrency(selectedLot.adjusted_cost_basis)} adj. CB`
+                      : undefined}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {lots.map((l) => (
@@ -103,6 +108,7 @@ export function CallForm() {
             { label: 'Open Date', key: 'open_date', placeholder: '', type: 'date' },
             { label: 'Premium Received ($)', key: 'premium_received', placeholder: '150.00', type: 'number' },
             { label: 'Fees ($)', key: 'fees_open', placeholder: '1.30', type: 'number' },
+            { label: 'Quantity (contracts)', key: 'quantity', placeholder: '1', type: 'number' },
           ].map(({ label, key, placeholder, type }) => (
             <div key={key} className="space-y-1">
               <Label>{label}</Label>

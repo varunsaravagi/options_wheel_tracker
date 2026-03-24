@@ -132,6 +132,20 @@ def is_in_progress() -> bool:
     return len(issues) > 0
 
 
+def has_pending_pr() -> bool:
+    """Check if any issue is labeled pr-ready (awaiting human merge)."""
+    result = run([
+        "gh", "issue", "list",
+        "--label", "pr-ready",
+        "--state", "open",
+        "--json", "number",
+        "--limit", "1"
+    ], cwd=str(REPO_ROOT))
+    issues = json.loads(result.stdout)
+    return len(issues) > 0
+
+
+
 def set_label(issue_number: int, add: str, remove: str | None = None):
     """Add a label and optionally remove another."""
     if remove:
@@ -151,16 +165,27 @@ def comment_on_issue(issue_number: int, body: str):
 
 
 def get_retry_count(issue_number: int) -> int:
-    """Count how many times we've attempted this issue (by counting in-progress label additions)."""
-    # Check for a retry marker in issue comments
+    """Count [agent-retry] comments since the last [agent-reset] marker.
+
+    When a user re-labels an issue from manual back to todo, we post an
+    [agent-reset] comment to zero out the counter so old failures don't
+    immediately re-trigger the manual threshold.
+    """
     result = run([
         "gh", "issue", "view", str(issue_number),
         "--json", "comments",
-        "-q", '.comments[] | select(.body | startswith("[agent-retry]")) | .body'
+        "-q", '.comments[].body'
     ], cwd=str(REPO_ROOT), check=False)
     if result.returncode != 0:
         return 0
-    return result.stdout.strip().count("[agent-retry]")
+    # Walk comments in order; reset counter on [agent-reset], increment on [agent-retry]
+    count = 0
+    for line in result.stdout.strip().splitlines():
+        if line.startswith("[agent-reset]"):
+            count = 0
+        elif line.startswith("[agent-retry]"):
+            count += 1
+    return count
 
 
 def slugify(text: str) -> str:
@@ -228,11 +253,19 @@ def create_worktree(issue_number: int, branch_name: str) -> Path:
          str(worktree_path), "origin/dev"],
         cwd=str(REPO_ROOT))
 
-    # Install frontend dependencies if node_modules doesn't exist
+    # Install frontend dependencies if node_modules doesn't exist.
+    # Symlink from the main dev worktree if available (faster than npm install).
     frontend_nm = worktree_path / "frontend" / "node_modules"
-    if not frontend_nm.exists():
+    dev_nm = REPO_ROOT / "frontend" / "node_modules"
+    if not frontend_nm.exists() and dev_nm.exists():
+        log("  Symlinking node_modules from dev worktree...")
+        frontend_nm.symlink_to(dev_nm)
+    elif not frontend_nm.exists():
         log("  Installing frontend dependencies in worktree...")
-        run(["npm", "install"], cwd=str(worktree_path / "frontend"), check=False)
+        try:
+            run(["npm", "install"], cwd=str(worktree_path / "frontend"), check=False)
+        except FileNotFoundError:
+            log("  WARN: npm not found — agent will need to install deps if needed")
 
     return worktree_path
 
@@ -270,14 +303,14 @@ def run_agent(worktree_path: Path, prompt: str) -> tuple[bool, str]:
     return success, output
 
 
-def check_pr_created(issue_number: int) -> bool:
-    """Check if a PR was created that references this issue."""
+def check_pr_created(issue_number: int, branch_name: str) -> bool:
+    """Check if a PR was created for this issue's branch."""
     result = run([
         "gh", "pr", "list",
         "--state", "open",
-        "--search", f"issue {issue_number}",
+        "--head", branch_name,
         "--json", "number",
-        "--limit", "5"
+        "--limit", "1"
     ], cwd=str(REPO_ROOT), check=False)
     if result.returncode != 0:
         return False
@@ -310,14 +343,13 @@ def process_issue(issue: dict, dry_run: bool = False):
         log("  [DRY RUN] Would process this issue. Skipping.")
         return
 
-    # Check retry count
+    # Check retry count — reset if the issue was manually re-labeled to todo
     retries = get_retry_count(number)
     if retries >= MAX_RETRIES:
-        log(f"  Issue has {retries} retries — marking as manual")
-        set_label(number, "manual", "todo")
-        comment_on_issue(number,
-            f"This issue has failed {retries} times. Marking as `manual` for human intervention.")
-        return
+        # There are old failures but the issue is labeled todo again — user reset it
+        log(f"  Retry counter reset (was {retries}) — user re-queued the issue")
+        comment_on_issue(number, "[agent-reset] Retry counter reset — issue re-queued.")
+        retries = 0
 
     # Mark in-progress
     set_label(number, "in-progress", "todo")
@@ -343,7 +375,7 @@ def process_issue(issue: dict, dry_run: bool = False):
     save_log(number, output)
 
     # Determine outcome
-    if success and check_pr_created(number):
+    if success and check_pr_created(number, branch_name):
         log(f"  Success — PR created for issue #{number}")
         set_label(number, "pr-ready", "in-progress")
     elif success:
@@ -426,10 +458,17 @@ def main():
         process_issue(issue, dry_run=args.dry_run)
         return
 
-    # Poll mode: check for in-progress first
+    # Poll mode: only one active agent issue at a time.
+    # Skip if anything is in-progress or if a PR is awaiting review.
+    # This prevents merge conflicts from multiple PRs branching off the same dev.
     if is_in_progress():
         log("An issue is already in-progress — skipping this run")
         return
+
+    if has_pending_pr():
+        log("A pr-ready issue is awaiting merge — skipping to avoid conflicts")
+        return
+
 
     # Fetch todo issues
     issues = fetch_todo_issues()
