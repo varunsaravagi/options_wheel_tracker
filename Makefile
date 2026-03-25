@@ -1,4 +1,4 @@
-.PHONY: refresh-dev start-prod stop-prod start-dev stop-dev
+.PHONY: refresh-dev start-prod stop-prod start-dev stop-dev promote deploy-prod
 
 PROD_DIR := /root/options_wheel_tracker
 DEV_DIR  := /root/options_wheel_tracker/dev
@@ -25,3 +25,18 @@ start-dev:
 stop-dev:
 	pkill -f "dev/backend/target" || true
 	pkill -f "dev/frontend"       || true
+
+promote:
+	@echo "Merging dev into main..."
+	cd $(PROD_DIR) && git fetch origin && git merge -X theirs origin/dev -m "Merge dev into main"
+	cd $(PROD_DIR) && git push origin main
+	@echo "main is now up to date with dev."
+
+deploy-prod: stop-prod
+	@echo "Pulling latest main in prod worktree..."
+	cd $(PROD_DIR) && git pull origin main
+	@echo "Building and starting prod..."
+	cd $(PROD_DIR)/backend && cargo build --release
+	cd $(PROD_DIR)/frontend && npm run build
+	$(MAKE) start-prod
+	@echo "Prod deployed."
