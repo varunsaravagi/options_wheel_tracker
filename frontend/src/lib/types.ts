@@ -60,3 +60,30 @@ export interface HistoryFilters {
   date_from?: string;
   date_to?: string;
 }
+
+export interface MonthlyIncome {
+  month: string;
+  sto_income: number;
+  btc_cost: number;
+  net_income: number;
+}
+
+export interface CumulativePnl {
+  month: string;
+  cumulative: number;
+}
+
+export interface TickerPremium {
+  ticker: string;
+  net_premium: number;
+}
+
+export interface StatisticsData {
+  total_premium: number;
+  total_premium_open: number;
+  yield_closed: number;
+  yield_open: number;
+  monthly_income: MonthlyIncome[];
+  cumulative_pnl: CumulativePnl[];
+  premium_by_ticker: TickerPremium[];
+}

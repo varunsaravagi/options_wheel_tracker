@@ -7,6 +7,7 @@ const navLinks = [
   { href: '/trades/new-call', label: 'Sell CALL' },
   { href: '/trades/new-lot', label: 'Add Share Lot' },
   { href: '/history', label: 'History' },
+  { href: '/statistics', label: 'Statistics' },
 ];
 
 export function Sidebar() {

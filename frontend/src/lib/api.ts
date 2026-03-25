@@ -1,4 +1,4 @@
-import type { Account, DashboardData, HistoryFilters, ShareLot, Trade } from './types';
+import type { Account, DashboardData, HistoryFilters, ShareLot, StatisticsData, Trade } from './types';
 
 const BASE = '';
 
@@ -40,6 +40,10 @@ export const api = {
   dashboard: (accountId?: number) => {
     const qs = accountId ? `?account_id=${accountId}` : '';
     return request<DashboardData>(`/api/dashboard${qs}`);
+  },
+  statistics: (accountId?: number) => {
+    const qs = accountId ? `?account_id=${accountId}` : '';
+    return request<StatisticsData>(`/api/statistics${qs}`);
   },
   history: (filters: HistoryFilters) => {
     const params = new URLSearchParams();
