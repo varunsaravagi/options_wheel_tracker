@@ -5,3 +5,4 @@ pub mod history;
 pub mod puts;
 pub mod share_lots;
 pub mod statistics;
+pub mod yield_calc;
