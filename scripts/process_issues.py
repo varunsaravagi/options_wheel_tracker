@@ -2,17 +2,20 @@
 """
 Agentic issue processor for the Options Wheel Tracker.
 
-Polls GitHub for issues labeled 'todo', picks the oldest one, and spawns
-Claude Code in headless mode to implement the fix or feature. Each issue
-gets its own git worktree for isolation.
+Polls GitHub for issues labeled 'todo' or 'needs-revision', picks one based
+on priority, and spawns Claude Code in headless mode to implement the fix,
+feature, or revision. Each issue gets its own git worktree for isolation.
 
 Label state machine:
     todo                → agent picks it up, moves to in-progress
     in-progress         → agent is working (skipped on next poll)
     pr-ready            → agent finished, PR is open for review
+    needs-revision      → human left PR feedback, agent should revise (priority over todo)
     needs-attention     → agent failed or hit a constraint
     needs-clarification → agent commented a question, waiting for human
-    manual              → 3 failures, needs human intervention
+    manual              → repeated failures, needs human intervention
+
+Poll priority: in-progress (skip) > needs-revision > pr-ready (skip) > todo
 
 Usage:
     python3 scripts/process_issues.py [--dry-run] [--issue NUMBER]
@@ -41,11 +44,13 @@ REPO = None  # Set dynamically from git remote
 REPO_ROOT = Path(__file__).resolve().parent.parent  # /root/options_wheel_tracker/dev
 WORKTREE_BASE = REPO_ROOT.parent / "worktrees"  # /root/options_wheel_tracker/worktrees
 PROMPT_TEMPLATE = REPO_ROOT / "scripts" / "issue-prompt-template.md"
+REVISION_PROMPT_TEMPLATE = REPO_ROOT / "scripts" / "revision-prompt-template.md"
 LOG_DIR = REPO_ROOT.parent / "logs"
 
 # Agent constraints
 MAX_TIMEOUT_SECONDS = 600  # 10 minutes
 MAX_RETRIES = 3
+MAX_REVISION_RETRIES = 2
 MAX_BUDGET_USD = 5.0  # Maximum API spend per issue
 
 
@@ -145,6 +150,41 @@ def has_pending_pr() -> bool:
     return len(issues) > 0
 
 
+def fetch_needs_revision_issue() -> dict | None:
+    """Fetch the oldest open issue labeled 'needs-revision'."""
+    result = run([
+        "gh", "issue", "list",
+        "--label", "needs-revision",
+        "--state", "open",
+        "--search", "sort:created-asc",
+        "--json", "number,title,body,labels,createdAt",
+        "--limit", "1"
+    ], cwd=str(REPO_ROOT))
+    issues = json.loads(result.stdout)
+    return issues[0] if issues else None
+
+
+def find_issue_pr(issue_number: int) -> dict | None:
+    """Find the open PR for an issue by searching for its branch prefix.
+
+    Returns dict with 'number', 'headRefName', 'url' keys, or None.
+    Uses regex to avoid false positives (e.g., issue-1- matching issue-12-).
+    """
+    result = run([
+        "gh", "pr", "list",
+        "--state", "open",
+        "--json", "number,headRefName,url",
+        "--limit", "20"
+    ], cwd=str(REPO_ROOT), check=False)
+    if result.returncode != 0:
+        return None
+    prs = json.loads(result.stdout)
+    pattern = re.compile(rf'(?:^|/)issue-{issue_number}-')
+    for pr in prs:
+        if pattern.search(pr["headRefName"]):
+            return pr
+    return None
+
 
 def set_label(issue_number: int, add: str, remove: str | None = None):
     """Add a label and optionally remove another."""
@@ -186,6 +226,36 @@ def get_retry_count(issue_number: int) -> int:
         elif line.startswith("[agent-retry]"):
             count += 1
     return count
+
+
+def get_revision_retry_count(issue_number: int) -> int:
+    """Count [revision-retry] comments since the last [revision-reset] marker."""
+    result = run([
+        "gh", "issue", "view", str(issue_number),
+        "--json", "comments",
+        "-q", '.comments[].body'
+    ], cwd=str(REPO_ROOT), check=False)
+    if result.returncode != 0:
+        return 0
+    count = 0
+    for line in result.stdout.strip().splitlines():
+        if line.startswith("[revision-reset]"):
+            count = 0
+        elif line.startswith("[revision-retry]"):
+            count += 1
+    return count
+
+
+def fetch_issue_comments(issue_number: int) -> str:
+    """Fetch all comments on an issue, formatted for inclusion in prompts."""
+    result = run([
+        "gh", "issue", "view", str(issue_number),
+        "--json", "comments",
+        "-q", r'.comments[] | "**\(.author.login)** (\(.createdAt)):\n\(.body)\n"'
+    ], cwd=str(REPO_ROOT), check=False)
+    if result.returncode != 0 or not result.stdout.strip():
+        return "(no comments)"
+    return result.stdout.strip()
 
 
 def slugify(text: str) -> str:
@@ -416,6 +486,7 @@ def ensure_labels_exist():
         "in-progress": "FBCA04",
         "pr-ready": "1D76DB",
         "needs-attention": "D93F0B",
+        "needs-revision": "C5DEF5",
         "needs-clarification": "F9D0C4",
         "manual": "B60205",
     }
