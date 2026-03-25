@@ -1,4 +1,4 @@
-use crate::handlers::{accounts, calls, dashboard, history, puts, share_lots};
+use crate::handlers::{accounts, calls, dashboard, history, puts, share_lots, statistics};
 use axum::{
     routing::{delete, get, post, put},
     Router,
@@ -28,6 +28,7 @@ pub fn create_router(pool: SqlitePool) -> Router {
         .route("/api/trades/calls/:id/close", post(calls::close_call))
         .route("/api/dashboard", get(dashboard::get_dashboard))
         .route("/api/history", get(history::get_history))
+        .route("/api/statistics", get(statistics::get_statistics))
         .layer(CorsLayer::permissive())
         .with_state(pool)
 }
