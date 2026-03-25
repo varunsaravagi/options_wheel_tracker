@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use crate::models::share_lot::ShareLot;
+use crate::handlers::yield_calc::{calculate_yields, round2};
 use crate::models::trade::Trade;
 use axum::{
     extract::{Query, State},
@@ -48,10 +48,6 @@ pub struct StatisticsResponse {
 fn month_key(date: &str) -> String {
     // "2025-01-15" -> "2025-01"
     date.get(..7).unwrap_or(date).to_string()
-}
-
-fn round2(v: f64) -> f64 {
-    (v * 100.0).round() / 100.0
 }
 
 pub async fn get_statistics(
@@ -138,58 +134,9 @@ pub async fn get_statistics(
         .collect();
     premium_by_ticker.sort_by(|a, b| b.net_premium.partial_cmp(&a.net_premium).unwrap());
 
-    // Yield calculations (same approach as dashboard, including CALL capital from share lots)
-    let mut realized_weighted = 0.0;
-    let mut realized_capital = 0.0;
-    let mut open_weighted = 0.0;
-    let mut open_capital = 0.0;
-    let today_str = chrono::Local::now().format("%Y-%m-%d").to_string();
-
-    for trade in &trades {
-        let net = trade.net_premium().unwrap_or(0.0);
-        let qty = trade.quantity as f64;
-        let capital = if trade.trade_type == "CALL" {
-            if let Some(lot_id) = trade.share_lot_id {
-                if let Ok(lot) = ShareLot::get(&pool, lot_id).await {
-                    lot.adjusted_cost_basis * 100.0 * qty
-                } else {
-                    trade.strike_price * 100.0 * qty
-                }
-            } else {
-                trade.strike_price * 100.0 * qty
-            }
-        } else {
-            trade.strike_price * 100.0 * qty
-        };
-
-        if trade.status == "OPEN" {
-            let days = days_between(&trade.open_date, &today_str);
-            if capital > 0.0 {
-                let ann = (net / capital) * (365.0 / days);
-                open_weighted += ann * capital;
-                open_capital += capital;
-            }
-        } else {
-            let close_date = trade.close_date.as_deref().unwrap_or(&today_str);
-            let days = days_between(&trade.open_date, close_date);
-            if capital > 0.0 {
-                let ann = (net / capital) * (365.0 / days);
-                realized_weighted += ann * capital;
-                realized_capital += capital;
-            }
-        }
-    }
-
-    let yield_closed = if realized_capital > 0.0 {
-        round2((realized_weighted / realized_capital) * 100.0)
-    } else {
-        0.0
-    };
-    let yield_open = if open_capital > 0.0 {
-        round2((open_weighted / open_capital) * 100.0)
-    } else {
-        0.0
-    };
+    let yields = calculate_yields(&pool, &trades).await;
+    let yield_closed = yields.realized_yield;
+    let yield_open = yields.open_yield;
 
     Ok(Json(StatisticsResponse {
         total_premium: round2(total_premium),
@@ -200,15 +147,6 @@ pub async fn get_statistics(
         cumulative_pnl,
         premium_by_ticker,
     }))
-}
-
-fn days_between(from: &str, to: &str) -> f64 {
-    use chrono::NaiveDate;
-    let parse = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
-    match (parse(from), parse(to)) {
-        (Some(f), Some(t)) => (t - f).num_days().max(1) as f64,
-        _ => 1.0,
-    }
 }
 
 #[cfg(test)]

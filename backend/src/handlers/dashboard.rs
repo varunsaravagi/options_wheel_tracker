@@ -1,11 +1,11 @@
 use crate::errors::AppError;
+use crate::handlers::yield_calc::{calculate_yields, get_capital_for_trade, round2};
 use crate::models::share_lot::ShareLot;
 use crate::models::trade::Trade;
 use axum::{
     extract::{Query, State},
     Json,
 };
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
@@ -24,92 +24,31 @@ pub struct DashboardResponse {
     pub active_share_lots: Vec<ShareLot>,
 }
 
-fn days_between(from: &str, to: &str) -> f64 {
-    let parse = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
-    match (parse(from), parse(to)) {
-        (Some(f), Some(t)) => (t - f).num_days().max(1) as f64,
-        _ => 1.0,
-    }
-}
-
-fn today() -> String {
-    chrono::Local::now().format("%Y-%m-%d").to_string()
-}
-
-async fn get_capital_for_trade(pool: &SqlitePool, trade: &Trade) -> f64 {
-    let qty = trade.quantity as f64;
-    if trade.trade_type == "PUT" {
-        trade.strike_price * 100.0 * qty
-    } else {
-        // CALL: look up linked lot's adjusted_cost_basis
-        if let Some(lot_id) = trade.share_lot_id {
-            if let Ok(lot) = ShareLot::get(pool, lot_id).await {
-                return lot.adjusted_cost_basis * 100.0 * qty;
-            }
-        }
-        trade.strike_price * 100.0 * qty
-    }
-}
-
 pub async fn get_dashboard(
     State(pool): State<SqlitePool>,
     Query(params): Query<DashboardQuery>,
 ) -> Result<Json<DashboardResponse>, AppError> {
     let trades = Trade::list_with_filters(&pool, params.account_id, None, None, None).await?;
 
+    let yields = calculate_yields(&pool, &trades).await;
+
     let mut total_premium = 0.0;
     let mut open_trades = Vec::new();
-
-    // For weighted average: sum of (yield * capital) and sum of capital
-    let mut realized_weighted_sum = 0.0;
-    let mut realized_capital_sum = 0.0;
-    let mut open_weighted_sum = 0.0;
-    let mut open_capital_sum = 0.0;
     let mut total_capital_deployed = 0.0;
 
-    let today_str = today();
-
     for trade in &trades {
-        let net = trade.net_premium().unwrap_or(0.0);
         let capital = get_capital_for_trade(&pool, trade).await;
 
         if trade.status == "OPEN" {
-            let days = days_between(&trade.open_date, &today_str);
-            let annualized = if capital > 0.0 {
-                (net / capital) * (365.0 / days)
-            } else {
-                0.0
-            };
-            open_weighted_sum += annualized * capital;
-            open_capital_sum += capital;
             open_trades.push(trade.clone());
             total_capital_deployed += capital;
         } else {
-            // Closed trade
-            total_premium += net;
-            let close_date = trade.close_date.as_deref().unwrap_or(&today_str);
-            let days = days_between(&trade.open_date, close_date);
-            let annualized = if capital > 0.0 {
-                (net / capital) * (365.0 / days)
-            } else {
-                0.0
-            };
-            realized_weighted_sum += annualized * capital;
-            realized_capital_sum += capital;
+            total_premium += trade.net_premium().unwrap_or(0.0);
         }
     }
 
-    let realized_annualized_yield = if realized_capital_sum > 0.0 {
-        (realized_weighted_sum / realized_capital_sum) * 100.0
-    } else {
-        0.0
-    };
-
-    let open_annualized_yield = if open_capital_sum > 0.0 {
-        (open_weighted_sum / open_capital_sum) * 100.0
-    } else {
-        0.0
-    };
+    let realized_annualized_yield = yields.realized_yield;
+    let open_annualized_yield = yields.open_yield;
 
     // Fetch active share lots
     let active_share_lots = if let Some(account_id) = params.account_id {
@@ -138,11 +77,9 @@ pub async fn get_dashboard(
         }
     }
 
-    // Round yields to 2 decimal places
-    let realized_annualized_yield = (realized_annualized_yield * 100.0).round() / 100.0;
-    let open_annualized_yield = (open_annualized_yield * 100.0).round() / 100.0;
-    let total_premium = (total_premium * 100.0).round() / 100.0;
-    let total_capital_deployed = (total_capital_deployed * 100.0).round() / 100.0;
+    // Round monetary values to 2 decimal places
+    let total_premium = round2(total_premium);
+    let total_capital_deployed = round2(total_capital_deployed);
 
     Ok(Json(DashboardResponse {
         total_premium_collected: total_premium,
