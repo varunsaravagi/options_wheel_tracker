@@ -1,4 +1,5 @@
 use crate::errors::AppError;
+use crate::models::share_lot::ShareLot;
 use crate::models::trade::Trade;
 use axum::{
     extract::{Query, State},
@@ -137,7 +138,7 @@ pub async fn get_statistics(
         .collect();
     premium_by_ticker.sort_by(|a, b| b.net_premium.partial_cmp(&a.net_premium).unwrap());
 
-    // Yield calculations (same approach as dashboard)
+    // Yield calculations (same approach as dashboard, including CALL capital from share lots)
     let mut realized_weighted = 0.0;
     let mut realized_capital = 0.0;
     let mut open_weighted = 0.0;
@@ -147,7 +148,19 @@ pub async fn get_statistics(
     for trade in &trades {
         let net = trade.net_premium().unwrap_or(0.0);
         let qty = trade.quantity as f64;
-        let capital = trade.strike_price * 100.0 * qty;
+        let capital = if trade.trade_type == "CALL" {
+            if let Some(lot_id) = trade.share_lot_id {
+                if let Ok(lot) = ShareLot::get(&pool, lot_id).await {
+                    lot.adjusted_cost_basis * 100.0 * qty
+                } else {
+                    trade.strike_price * 100.0 * qty
+                }
+            } else {
+                trade.strike_price * 100.0 * qty
+            }
+        } else {
+            trade.strike_price * 100.0 * qty
+        };
 
         if trade.status == "OPEN" {
             let days = days_between(&trade.open_date, &today_str);

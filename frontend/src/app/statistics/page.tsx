@@ -11,35 +11,51 @@ function MonthlyIncomeChart({ data }: { data: StatisticsData }) {
   const items = data.monthly_income;
   if (items.length === 0) return <p className="text-muted-foreground text-sm">No data yet</p>;
 
-  const maxVal = Math.max(...items.map(d => Math.max(d.sto_income, d.btc_cost, Math.abs(d.net_income))), 1);
-  const chartH = 240;
+  // BTC cost shown as negative, so chart extends below zero
+  const maxPos = Math.max(...items.map(d => Math.max(d.sto_income, d.net_income)), 1);
+  const maxNeg = Math.max(...items.map(d => d.btc_cost), 0);
+  const totalRange = maxPos + maxNeg;
+  const chartH = 280;
   const barW = Math.min(60, Math.max(20, 600 / items.length / 3));
   const gap = barW * 0.3;
   const groupW = barW * 2 + gap * 3;
   const chartW = Math.max(items.length * groupW + 60, 300);
+  const topPad = 20;
+  const botPad = 20;
+  const drawH = chartH - topPad - botPad;
+  const zeroY = topPad + (maxPos / totalRange) * drawH;
+
+  const toY = (v: number) => zeroY - (v / totalRange) * drawH;
 
   // Net income line points
   const linePoints = items.map((d, i) => {
     const x = 40 + i * groupW + groupW / 2;
-    const y = chartH - (d.net_income / maxVal) * (chartH - 40) - 20;
+    const y = toY(d.net_income);
     return `${x},${y}`;
   }).join(' ');
 
+  // Y axis labels spanning positive and negative range
+  const yTicks = [-maxNeg, -maxNeg * 0.5, 0, maxPos * 0.5, maxPos].filter(
+    (v, i, arr) => i === arr.findIndex(u => Math.abs(u - v) < totalRange * 0.01)
+  );
+
   return (
     <div className="overflow-x-auto">
-      <svg width={chartW} height={chartH + 50} className="text-xs">
+      <svg width={chartW} height={chartH + 30} className="text-xs">
         {/* Y axis line */}
-        <line x1="38" y1="10" x2="38" y2={chartH - 18} stroke="currentColor" strokeOpacity="0.2" />
+        <line x1="38" y1={topPad} x2="38" y2={chartH - botPad} stroke="currentColor" strokeOpacity="0.2" />
+
+        {/* Zero line */}
+        <line x1="38" x2={chartW} y1={zeroY} y2={zeroY} stroke="currentColor" strokeOpacity="0.3" />
 
         {/* Y axis labels */}
-        {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
-          const y = chartH - 20 - frac * (chartH - 40);
-          const val = frac * maxVal;
+        {yTicks.map((val) => {
+          const y = toY(val);
           return (
-            <g key={frac}>
+            <g key={val}>
               <line x1="38" x2={chartW} y1={y} y2={y} stroke="currentColor" strokeOpacity="0.08" />
               <text x="35" y={y + 4} textAnchor="end" fill="currentColor" opacity="0.5" fontSize="10">
-                {val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val.toFixed(0)}
+                {Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(1)}k` : val.toFixed(0)}
               </text>
             </g>
           );
@@ -47,22 +63,21 @@ function MonthlyIncomeChart({ data }: { data: StatisticsData }) {
 
         {items.map((d, i) => {
           const x = 40 + i * groupW + gap;
-          const stoH = (d.sto_income / maxVal) * (chartH - 40);
-          const btcH = (d.btc_cost / maxVal) * (chartH - 40);
-          const baseY = chartH - 20;
+          const stoH = (d.sto_income / totalRange) * drawH;
+          const btcH = (d.btc_cost / totalRange) * drawH;
 
           return (
             <g key={d.month}>
-              {/* STO bar */}
-              <rect x={x} y={baseY - stoH} width={barW} height={stoH} fill="#22c55e" rx="2">
+              {/* STO bar (above zero) */}
+              <rect x={x} y={zeroY - stoH} width={barW} height={stoH} fill="#22c55e" rx="2">
                 <title>STO: {formatCurrency(d.sto_income)}</title>
               </rect>
-              {/* BTC bar */}
-              <rect x={x + barW + gap} y={baseY - btcH} width={barW} height={btcH} fill="#ef4444" rx="2">
-                <title>BTC: {formatCurrency(d.btc_cost)}</title>
+              {/* BTC bar (below zero, shown as negative) */}
+              <rect x={x + barW + gap} y={zeroY} width={barW} height={btcH} fill="#ef4444" rx="2">
+                <title>BTC: -{formatCurrency(d.btc_cost)}</title>
               </rect>
               {/* Month label */}
-              <text x={x + barW + gap / 2} y={baseY + 14} textAnchor="middle" fill="currentColor" opacity="0.6" fontSize="10">
+              <text x={x + barW + gap / 2} y={chartH - botPad + 14} textAnchor="middle" fill="currentColor" opacity="0.6" fontSize="10">
                 {d.month}
               </text>
             </g>
@@ -73,7 +88,7 @@ function MonthlyIncomeChart({ data }: { data: StatisticsData }) {
         <polyline points={linePoints} fill="none" stroke="#3b82f6" strokeWidth="2" />
         {items.map((d, i) => {
           const x = 40 + i * groupW + groupW / 2;
-          const y = chartH - (d.net_income / maxVal) * (chartH - 40) - 20;
+          const y = toY(d.net_income);
           return (
             <circle key={i} cx={x} cy={y} r="3" fill="#3b82f6">
               <title>Net: {formatCurrency(d.net_income)}</title>
