@@ -7,6 +7,10 @@
 
 {body}
 
+## Comments
+
+{comments}
+
 ## Instructions
 
 You are an autonomous agent working on the Options Wheel Tracker project.

@@ -314,15 +314,16 @@ def build_prompt(issue: dict, branch_name: str) -> str:
     template = PROMPT_TEMPLATE.read_text()
     label_names = ", ".join(l["name"] for l in issue.get("labels", []))
     issue_type = determine_issue_type(issue)
+    comments = fetch_issue_comments(issue["number"])
 
-    prompt = template.format(
-        number=issue["number"],
-        title=issue["title"],
-        labels=label_names,
-        issue_type=issue_type,
-        body=issue.get("body", "(no description)") or "(no description)",
-        branch_name=branch_name,
-    )
+    prompt = (template
+        .replace("{number}", str(issue["number"]))
+        .replace("{title}", issue["title"])
+        .replace("{labels}", label_names)
+        .replace("{issue_type}", issue_type)
+        .replace("{body}", issue.get("body", "(no description)") or "(no description)")
+        .replace("{branch_name}", branch_name)
+        .replace("{comments}", comments))
     return prompt
 
 
