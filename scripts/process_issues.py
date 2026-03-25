@@ -258,6 +258,34 @@ def fetch_issue_comments(issue_number: int) -> str:
     return result.stdout.strip()
 
 
+def fetch_pr_comments(pr_number: int) -> str:
+    """Fetch PR comments (regular + review) for revision prompts.
+
+    Excludes bot comments. Review comments include file path and line number.
+    """
+    comments = []
+
+    # Regular PR comments (conversation)
+    result = run([
+        "gh", "api", f"repos/{REPO}/issues/{pr_number}/comments",
+        "--jq", r'.[] | select(.user.type != "Bot") | "**\(.user.login)** (\(.created_at)):\n\(.body)\n"'
+    ], cwd=str(REPO_ROOT), check=False)
+    if result.returncode == 0 and result.stdout.strip():
+        comments.append("### PR Comments\n")
+        comments.append(result.stdout.strip())
+
+    # Review comments (inline on code)
+    result = run([
+        "gh", "api", f"repos/{REPO}/pulls/{pr_number}/comments",
+        "--jq", r'.[] | select(.user.type != "Bot") | "**\(.user.login)** (\(.created_at)) on `\(.path):\(.line // .original_line)`:\n\(.body)\n"'
+    ], cwd=str(REPO_ROOT), check=False)
+    if result.returncode == 0 and result.stdout.strip():
+        comments.append("\n### Inline Review Comments\n")
+        comments.append(result.stdout.strip())
+
+    return "\n".join(comments) if comments else "(no PR comments)"
+
+
 def slugify(text: str) -> str:
     """Convert issue title to branch-name-safe slug."""
     slug = text.lower()
@@ -298,8 +326,12 @@ def build_prompt(issue: dict, branch_name: str) -> str:
     return prompt
 
 
-def create_worktree(issue_number: int, branch_name: str) -> Path:
-    """Create an isolated git worktree for this issue."""
+def create_worktree(issue_number: int, branch_name: str, revision: bool = False) -> Path:
+    """Create an isolated git worktree for this issue.
+
+    When revision=False (default): creates a new branch from origin/dev.
+    When revision=True: checks out the existing branch (preserving PR commits).
+    """
     worktree_path = WORKTREE_BASE / f"issue-{issue_number}"
 
     # Clean up if leftover from a previous attempt
@@ -312,16 +344,20 @@ def create_worktree(issue_number: int, branch_name: str) -> Path:
 
     WORKTREE_BASE.mkdir(parents=True, exist_ok=True)
 
-    # Fetch latest dev
-    run(["git", "fetch", "origin", "dev"], cwd=str(REPO_ROOT))
-
-    # Create the branch from dev and set up the worktree
-    # First, try to delete the branch if it exists from a previous attempt
-    run(["git", "branch", "-D", branch_name], cwd=str(REPO_ROOT), check=False)
-
-    run(["git", "worktree", "add", "-b", branch_name,
-         str(worktree_path), "origin/dev"],
-        cwd=str(REPO_ROOT))
+    if revision:
+        # Revision mode: check out existing branch (preserves PR commits)
+        # Fetch into local ref to ensure it exists and is up to date
+        run(["git", "fetch", "origin", f"{branch_name}:{branch_name}"],
+            cwd=str(REPO_ROOT), check=False)
+        run(["git", "worktree", "add", str(worktree_path), branch_name],
+            cwd=str(REPO_ROOT))
+    else:
+        # Implementation mode: new branch from origin/dev
+        run(["git", "fetch", "origin", "dev"], cwd=str(REPO_ROOT))
+        run(["git", "branch", "-D", branch_name], cwd=str(REPO_ROOT), check=False)
+        run(["git", "worktree", "add", "-b", branch_name,
+             str(worktree_path), "origin/dev"],
+            cwd=str(REPO_ROOT))
 
     # Install frontend dependencies if node_modules doesn't exist.
     # Symlink from the main dev worktree if available (faster than npm install).
@@ -388,11 +424,12 @@ def check_pr_created(issue_number: int, branch_name: str) -> bool:
     return len(prs) > 0
 
 
-def save_log(issue_number: int, output: str):
+def save_log(issue_number: int, output: str, revision: bool = False):
     """Save agent output to a log file."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y%m%d-%H%M%S")
-    log_file = LOG_DIR / f"issue-{issue_number}-{ts}.log"
+    kind = "revision" if revision else "impl"
+    log_file = LOG_DIR / f"issue-{issue_number}-{kind}-{ts}.log"
     log_file.write_text(output)
     log(f"  Agent output saved to {log_file}")
 
