@@ -327,6 +327,26 @@ def build_prompt(issue: dict, branch_name: str) -> str:
     return prompt
 
 
+def build_revision_prompt(issue: dict, pr: dict) -> str:
+    """Build the agent prompt for a PR revision.
+
+    Uses .replace() instead of .format() to avoid crashes when PR comments
+    or issue body contain curly braces (JSON, Rust code, etc.).
+    """
+    template = REVISION_PROMPT_TEMPLATE.read_text()
+    pr_comments = fetch_pr_comments(pr["number"])
+
+    prompt = (template
+        .replace("{number}", str(issue["number"]))
+        .replace("{title}", issue["title"])
+        .replace("{body}", issue.get("body", "(no description)") or "(no description)")
+        .replace("{pr_number}", str(pr["number"]))
+        .replace("{pr_url}", pr["url"])
+        .replace("{branch_name}", pr["headRefName"])
+        .replace("{pr_comments}", pr_comments))
+    return prompt
+
+
 def create_worktree(issue_number: int, branch_name: str, revision: bool = False) -> Path:
     """Create an isolated git worktree for this issue.
 
@@ -517,6 +537,93 @@ def process_issue(issue: dict, dry_run: bool = False):
     cleanup_worktree(number)
 
 
+def process_revision(issue: dict, dry_run: bool = False):
+    """Process a revision request for an existing PR."""
+    number = issue["number"]
+    title = issue["title"]
+
+    log(f"Processing revision for issue #{number}: {title}")
+
+    # Find the existing PR
+    pr = find_issue_pr(number)
+    if not pr:
+        log(f"  No open PR found for issue #{number}")
+        set_label(number, "needs-attention", "needs-revision")
+        comment_on_issue(number,
+            "[revision-retry] No open PR found for this issue. "
+            "The PR may have been closed. Marking as needs-attention.")
+        return
+
+    branch_name = pr["headRefName"]
+    log(f"  Found PR #{pr['number']} on branch {branch_name}")
+
+    if dry_run:
+        log("  [DRY RUN] Would process this revision. Skipping.")
+        return
+
+    # Check revision retry count — reset if re-queued from manual
+    retries = get_revision_retry_count(number)
+    if retries >= MAX_REVISION_RETRIES:
+        log(f"  Revision retry counter reset (was {retries}) — user re-queued")
+        comment_on_issue(number, "[revision-reset] Revision retry counter reset — re-queued.")
+        retries = 0
+
+    # Mark in-progress
+    set_label(number, "in-progress", "needs-revision")
+
+    # Create worktree on existing branch
+    try:
+        worktree_path = create_worktree(number, branch_name, revision=True)
+    except Exception as e:
+        log(f"  Failed to create revision worktree: {e}")
+        set_label(number, "needs-attention", "in-progress")
+        comment_on_issue(number,
+            f"[revision-retry] Failed to set up revision worktree:\n```\n{e}\n```")
+        return
+
+    # Build revision prompt and run agent
+    prompt = build_revision_prompt(issue, pr)
+    try:
+        success, output = run_agent(worktree_path, prompt)
+    except subprocess.TimeoutExpired:
+        log(f"  Agent timed out after {MAX_TIMEOUT_SECONDS}s")
+        success = False
+        output = f"Agent timed out after {MAX_TIMEOUT_SECONDS} seconds"
+
+    save_log(number, output, revision=True)
+
+    # Determine outcome
+    if success:
+        # Verify PR still exists
+        if find_issue_pr(number):
+            log(f"  Revision successful for issue #{number}")
+            set_label(number, "pr-ready", "in-progress")
+        else:
+            log(f"  Revision completed but PR is missing")
+            set_label(number, "needs-attention", "in-progress")
+            comment_on_issue(number,
+                "[revision-retry] Revision completed but the PR appears to be "
+                "closed or missing.")
+    else:
+        log(f"  Revision failed for issue #{number}")
+        retries += 1
+        if retries >= MAX_REVISION_RETRIES:
+            set_label(number, "manual", "in-progress")
+            truncated = output[-3000:] if len(output) > 3000 else output
+            comment_on_issue(number,
+                f"[revision-retry] Revision failed {retries}/{MAX_REVISION_RETRIES} "
+                f"times — marking as `manual`.\n\n"
+                f"Last output:\n```\n{truncated}\n```")
+        else:
+            set_label(number, "needs-revision", "in-progress")
+            comment_on_issue(number,
+                f"[revision-retry] Revision attempt {retries}/{MAX_REVISION_RETRIES} "
+                f"failed. Will retry on next poll.")
+
+    # Cleanup worktree (keep the branch for PR)
+    cleanup_worktree(number)
+
+
 def ensure_labels_exist():
     """Create required labels if they don't exist on the repo."""
     required = {
@@ -556,7 +663,7 @@ def main():
     ensure_labels_exist()
 
     if args.issue:
-        # Process a specific issue
+        # Process a specific issue — detect label to dispatch correctly
         issue = fetch_issue(args.issue)
         if not issue:
             log(f"Issue #{args.issue} not found")
@@ -564,20 +671,29 @@ def main():
         if issue["state"] != "OPEN":
             log(f"Issue #{args.issue} is not open (state: {issue['state']})")
             sys.exit(1)
-        process_issue(issue, dry_run=args.dry_run)
+        label_names = [l["name"] for l in issue.get("labels", [])]
+        if "needs-revision" in label_names:
+            process_revision(issue, dry_run=args.dry_run)
+        else:
+            process_issue(issue, dry_run=args.dry_run)
         return
 
     # Poll mode: only one active agent issue at a time.
-    # Skip if anything is in-progress or if a PR is awaiting review.
-    # This prevents merge conflicts from multiple PRs branching off the same dev.
+    # Priority: in-progress (skip) > needs-revision > pr-ready (skip) > todo
     if is_in_progress():
         log("An issue is already in-progress — skipping this run")
+        return
+
+    # Check for revision requests (priority over new work)
+    revision_issue = fetch_needs_revision_issue()
+    if revision_issue:
+        log(f"Found revision request: issue #{revision_issue['number']}")
+        process_revision(revision_issue, dry_run=args.dry_run)
         return
 
     if has_pending_pr():
         log("A pr-ready issue is awaiting merge — skipping to avoid conflicts")
         return
-
 
     # Fetch todo issues
     issues = fetch_todo_issues()
