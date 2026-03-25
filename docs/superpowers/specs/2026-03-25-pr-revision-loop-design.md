@@ -79,7 +79,7 @@ For revisions, the agent reads PR comments only. This is where the human leaves 
 
 ### Revision Mechanics
 
-**Branch reuse**: The revision workflow reuses the existing branch and PR. The agent creates a worktree on the existing branch (not a new branch from `dev`), reads the PR comments for feedback, makes changes, pushes, and the PR updates automatically. This requires a separate worktree creation path — the existing `create_worktree()` force-deletes the branch and creates a new one from `origin/dev`, which would destroy the PR's commits. The revision path must use `git worktree add <path> <existing-branch>` without the `-b` flag.
+**Branch reuse**: The revision workflow reuses the existing branch and PR. The existing `create_worktree()` is refactored with a `revision` flag — when `True`, it skips the branch delete and creates the worktree on the existing branch (`git worktree add <path> <branch>`, no `-b`). The agent reads the PR comments for feedback, makes changes, pushes, and the PR updates automatically.
 
 **PR/branch lookup**: The agent finds the existing PR by querying GitHub (`gh pr list --search "issue-{number}"` filtering by branch prefix) rather than reconstructing the branch name. This is robust against issue title edits after the original PR was created.
 
@@ -108,7 +108,7 @@ For revisions, the agent reads PR comments only. This is where the human leaves 
 1. **New label**: Add `needs-revision` to `ensure_labels_exist()` with a distinct color.
 2. **Poll priority**: Update `main()` to check for `needs-revision` issues before checking `todo`. The `needs-revision` check takes priority over the `pr-ready` gate — a `needs-revision` issue should be processed even though a PR exists.
 3. **Revision detection**: New function `fetch_needs_revision_issue()` to find issues labeled `needs-revision`.
-4. **Revision worktree creation**: New function `create_revision_worktree()` that checks out the existing branch without deleting/recreating it. Uses `git worktree add <path> <branch>` (no `-b` flag). The existing `create_worktree()` is destructive (force-deletes the branch) and cannot be reused for revisions.
+4. **Worktree creation refactor**: Add a `revision=False` parameter to `create_worktree()`. When `revision=True`, skip the branch delete and create the worktree on the existing branch (`git worktree add <path> <branch>`, no `-b` flag). When `revision=False`, keep the current behavior (delete branch, create new one from `origin/dev`).
 5. **PR/branch lookup**: New function `find_issue_pr()` that queries GitHub for the open PR associated with an issue (e.g., `gh pr list` filtering by branch prefix `*/issue-{number}-*`). Returns the PR number, branch name, and URL. Do not reconstruct the branch name from the issue title.
 6. **Revision processing**: New function `process_revision()` that:
    - Calls `find_issue_pr()` to locate the existing PR and branch
