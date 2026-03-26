@@ -11,24 +11,72 @@ Options wheel strategy tracker — a web app to track selling cash-secured puts 
 ```
 backend/
   src/
-    handlers/     # HTTP handlers (accounts, puts, calls, share_lots, dashboard, history)
-    models/       # Data models (account, trade, share_lot) with SQLx queries
+    handlers/           # HTTP handlers
+      accounts.rs       # Account CRUD + purge (nulls FKs before bulk delete)
+      puts.rs           # PUT open/close (EXPIRED, BOUGHT_BACK, ASSIGNED)
+      calls.rs          # CALL open/close + share lot listing
+      share_lots.rs     # Manual lot creation + sell
+      dashboard.rs      # Dashboard metrics aggregation
+      history.rs        # Trade history with filters
+      statistics.rs     # Monthly income, cumulative P&L, ticker premium breakdown
+      yield_calc.rs     # Shared annualized yield calculation logic
+    models/             # Data models with SQLx runtime queries
+      account.rs        # Account: id, name, created_at
+      trade.rs          # Trade: lifecycle + net_premium(), unit tests
+      share_lot.rs      # ShareLot: cost basis tracking, ACTIVE/CALLED_AWAY/SOLD, unit tests
     db/
-      migrations/ # Numbered SQL migrations (001_, 002_, ...)
-    routes.rs     # All route registration
-    errors.rs     # AppError type
-    main.rs       # Entrypoint
+      mod.rs            # Pool init (create_if_missing), migration runner
+      migrations/       # Numbered SQL migrations (001_, 002_, 003_, ...)
+    routes.rs           # All route registration + CORS
+    errors.rs           # AppError (Database/NotFound/BadRequest) → JSON responses
+    config.rs           # Config placeholder
+    main.rs             # Entrypoint: load .env, init pool, run migrations, bind
 frontend/
   src/
-    app/          # Next.js App Router pages
-    components/   # UI components (layout, forms, modals)
-    lib/          # API client, types
+    app/                # Next.js App Router pages
+      layout.tsx        # Root layout: Sidebar + AccountProvider
+      page.tsx          # Dashboard (metrics + active positions)
+      globals.css       # Tailwind + custom styles
+      trades/
+        new-put/page.tsx    # Sell PUT form
+        new-call/page.tsx   # Sell CALL form (lot selector)
+        new-lot/page.tsx    # Add manual share lot
+      history/page.tsx      # Trade history with filter bar
+      statistics/page.tsx   # Charts: monthly income, cumulative P&L, ticker premium
+    components/
+      layout/
+        Sidebar.tsx           # Navigation + AccountSelector
+        AccountSelector.tsx   # Account dropdown with create button
+      dashboard/
+        MetricCard.tsx        # Summary card (title, value, subtitle)
+        ActivePositions.tsx   # Open trades + active lots tables with close buttons
+      trades/
+        PutForm.tsx           # PUT trade entry
+        CallForm.tsx          # CALL trade entry
+        ClosePutModal.tsx     # PUT close dialog
+        CloseCallModal.tsx    # CALL close dialog
+      history/
+        FilterBar.tsx         # Ticker, date range, preset filters
+        TradeTable.tsx        # Trade list table with status badges
+      ui/                     # base-ui primitives (button, input, dialog, select, etc.)
+    contexts/
+      AccountContext.tsx   # Global account state: list, selectedId, setSelected, refresh
+    lib/
+      types.ts    # TypeScript interfaces for all API types
+      api.ts      # API client (relative URLs via Next.js rewrites)
+      utils.ts    # cn(), formatCurrency(), formatPercent(), daysToExpiry(), getDateRangePreset()
 scripts/
   import_csv.py       # Schwab CSV transaction import
-  pre-commit          # Git pre-commit hook
-  test-migration.sh   # Migration smoke test
-  refresh-dev-db.sh   # Copy prod DB to dev
-Makefile              # start/stop targets for dev and prod
+  process_issues.py   # GitHub issue processing workflow
+  pre-commit          # Git pre-commit hook (fmt, lint, migration test)
+  test-migration.sh   # Migration smoke test against real DB
+  refresh-dev-db.sh   # sqlite3 .backup prod → dev
+  setup-cron.sh       # Cron job setup
+  issue-prompt-template.md
+docs/
+  superpowers/specs/  # Feature specs
+  superpowers/plans/  # Implementation plans
+Makefile              # start/stop for dev and prod, promote, deploy-prod
 ```
 
 ### API Endpoints
@@ -44,18 +92,44 @@ POST   /api/trades/puts/:id/close     Close PUT (EXPIRED, BOUGHT_BACK, ASSIGNED)
 POST   /api/trades/calls/:id/close    Close CALL (EXPIRED, BOUGHT_BACK, CALLED_AWAY)
 GET    /api/accounts/:id/share-lots   List active share lots
 POST   /api/accounts/:id/share-lots   Create manual share lot
-PUT    /api/share-lots/:id/sell        Sell share lot manually
-GET    /api/dashboard                  Dashboard metrics (optional ?account_id=)
-GET    /api/history                    Trade history (optional filters)
+PUT    /api/share-lots/:id/sell       Sell share lot manually
+GET    /api/dashboard                 Dashboard metrics (optional ?account_id=)
+GET    /api/history                   Trade history (optional filters: account_id, ticker, date_from, date_to)
+GET    /api/statistics                Aggregated stats (optional ?account_id=)
 ```
 
 ### Data Model
 
 - **Account**: brokerage account (name)
 - **Trade**: an options trade (PUT or CALL) with lifecycle: OPEN → EXPIRED / BOUGHT_BACK / ASSIGNED / CALLED_AWAY
-- **ShareLot**: shares held, created via PUT assignment or manual entry. Status: ACTIVE → CALLED_AWAY / SOLD. Tracks original and adjusted cost basis (reduced by covered call premiums)
+- **ShareLot**: shares held, created via PUT assignment or manual entry. Status: ACTIVE → CALLED_AWAY / SOLD. Tracks original and adjusted cost basis (reduced by covered call premiums). Has `sale_price` and `sale_date` for SOLD status.
 
 Circular FK relationship: `trades.share_lot_id → share_lots(id)` and `share_lots.source_trade_id → trades(id)`. Must null out cross-references before bulk deleting either table.
+
+### Key Calculations
+
+**Cost basis for assigned PUT:**
+```
+adjusted_cb = strike - (premium_received - fees_open) / (100 * quantity)
+```
+
+**Cost basis reduction when selling CALL:**
+```
+per_share = (premium_received - fees_open) / lot.quantity
+adjusted_cost_basis -= per_share
+```
+
+**Annualized yield:**
+```
+yield = (net_premium / capital) * (365 / days_held) * 100
+capital for PUT  = strike_price * 100 * quantity
+capital for CALL = lot.adjusted_cost_basis * 100 * quantity
+```
+
+**Net premium:**
+```
+net_premium = premium_received - fees_open - close_premium - fees_close
+```
 
 ## Development Guidelines
 
@@ -74,6 +148,7 @@ Circular FK relationship: `trades.share_lot_id → share_lots(id)` and `share_lo
 - **Cost basis formula for assigned PUTs**: `adjusted_cb = strike - (premium - fees) / (100 * quantity)`
 - **Share lot cost basis reduction**: when a covered call is sold, `per_share = premium_total / lot.quantity`
 - **DB creation**: use `SqliteConnectOptions::from_str(url).create_if_missing(true)` with `connect_with()` — plain `connect()` won't create missing SQLite files
+- **Error variants**: `AppError::NotFound` (404), `AppError::BadRequest(String)` (400), `AppError::Database(sqlx::Error)` (500)
 
 ### Frontend Rules
 
@@ -84,6 +159,7 @@ Circular FK relationship: `trades.share_lot_id → share_lots(id)` and `share_lo
   - `Select.onValueChange` signature: `(value: string | null, ...)`
 - **API calls use relative URLs** through Next.js rewrites — `BASE = ''` in `api.ts`. Never hardcode backend IP/port in frontend code
 - **API proxy** is configured in `next.config.ts` via `rewrites()` — do not modify the rewrite rules without understanding the proxy setup
+- **Account state** is global via `AccountContext` — use `useAccounts()` hook to access selected account
 
 ### SQLite Migration Rules
 
@@ -91,6 +167,7 @@ Circular FK relationship: `trades.share_lot_id → share_lots(id)` and `share_lo
 - When recreating tables with FK references, **null out cross-references first**, then drop/recreate, then restore references. `PRAGMA foreign_keys = OFF` does not work inside SQLx migration transactions
 - Always test migrations against a real database with data, not just `:memory:` — use `scripts/test-migration.sh`
 - Number migrations sequentially: `001_`, `002_`, `003_`, etc.
+- Migration history: 001 = initial schema, 002 = add quantity to trades, 003 = add SOLD status + sale_price/sale_date to share_lots
 
 ### Testing
 
@@ -99,6 +176,7 @@ Circular FK relationship: `trades.share_lot_id → share_lots(id)` and `share_lo
 - `npm run build` — must pass for all frontend changes
 - `scripts/test-migration.sh` — run when creating or modifying migrations (also runs automatically via pre-commit hook)
 - When fixing bugs, write a regression test. When adding features, write tests if the feature involves new model/handler logic
+- Backend tests use `axum_test::TestServer` and `db::init_pool("sqlite::memory:")`
 
 ### Pre-commit Hook
 
@@ -115,6 +193,7 @@ If the hook isn't running, set: `git config core.hooksPath scripts`
 - Two git worktrees: `dev/` (tracks `dev` branch) and `prod/` (tracks `main`)
 - Use Makefile targets: `make start-dev`, `make stop-dev`, `make start-prod`, `make stop-prod`
 - Dev DB refresh from prod: `make refresh-dev` (uses sqlite3 `.backup`, safe for live DB)
+- Promote to prod: `make promote` (merges dev → main) then `make deploy-prod`
 
 ### Things NOT to Do
 
