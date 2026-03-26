@@ -195,6 +195,131 @@ If the hook isn't running, set: `git config core.hooksPath scripts`
 - Dev DB refresh from prod: `make refresh-dev` (uses sqlite3 `.backup`, safe for live DB)
 - Promote to prod: `make promote` (merges dev → main) then `make deploy-prod`
 
+## Async Issue Processing Workflow
+
+Issues are implemented automatically using Claude Code in headless mode, orchestrated by `scripts/process_issues.py`. This script is typically run on a cron schedule (every 30 minutes) but can also be invoked manually.
+
+### How It Works
+
+The script polls GitHub for issues with specific labels, picks the highest-priority one, creates an isolated git worktree, and spawns a Claude Code agent to implement the fix or feature. The agent runs headless (`claude -p --permission-mode auto`) inside the worktree and is expected to commit, push, and open a PR.
+
+### Label State Machine
+
+```
+todo             → agent picks it up, transitions to in-progress
+in-progress      → agent is working (skipped on next poll)
+pr-ready         → agent finished, PR open and awaiting human review
+needs-revision   → human left PR feedback, agent should revise (priority over todo)
+needs-attention  → agent failed or hit a constraint, needs human to investigate
+needs-clarification → agent posted a question on the issue, waiting for human reply
+manual           → repeated failures, requires human intervention
+```
+
+**Poll priority**: `in-progress` (skip) > `needs-revision` > `pr-ready` (skip) > `todo`
+
+Only one issue is processed per run. If anything is `in-progress` or `pr-ready`, the script exits without picking up new work.
+
+### Running the Script
+
+```bash
+# Normal poll — picks up the highest-priority eligible issue
+python3 scripts/process_issues.py
+
+# Dry run — shows what would happen without executing
+python3 scripts/process_issues.py --dry-run
+
+# Force a specific issue (ignores label check)
+python3 scripts/process_issues.py --issue 42
+```
+
+### Cron Setup
+
+```bash
+bash scripts/setup-cron.sh install   # Install cron job (runs every 30 min)
+bash scripts/setup-cron.sh status    # Check if cron is active
+bash scripts/setup-cron.sh remove    # Remove cron job
+```
+
+Cron logs: `/root/options_wheel_tracker/logs/cron.log`
+Agent logs: `/root/options_wheel_tracker/logs/issue-{N}-{impl|revision}-{timestamp}.log`
+
+### Worktree Isolation
+
+Each issue gets its own git worktree at:
+```
+/root/options_wheel_tracker/worktrees/issue-{N}/
+```
+
+- **New issues**: branch created from `origin/dev` as `feat/issue-N-slug` or `fix/issue-N-slug`
+- **Revisions**: existing PR branch is checked out into a fresh worktree
+- `node_modules` is symlinked from the dev worktree if available (avoids reinstalling)
+- Worktrees are cleaned up after the agent finishes (branch is preserved for the PR)
+
+### Branch Naming
+
+Branches are auto-generated from the issue title and number:
+```
+fix/issue-{N}-{slug}    # for bugs (label: bug, or title contains fix/error/crash)
+feat/issue-{N}-{slug}   # for features/enhancements
+```
+
+Slug is the lowercased, hyphenated, 40-char-max title.
+
+### Prompt Templates
+
+Two templates drive agent behaviour:
+
+**`scripts/issue-prompt-template.md`** — for new implementations:
+- Instructs agent to read CLAUDE.md first, understand the issue, implement minimally
+- Requires writing tests (regression for bugs, feature tests for new logic)
+- Run `cargo check && cargo test`, `npm run build`, or `scripts/test-migration.sh` as appropriate
+- Commit, push, and open a PR targeting `dev` with `Closes #{number}`
+
+**`scripts/revision-prompt-template.md`** — for PR revisions after human feedback:
+- Instructs agent to address each piece of PR feedback
+- Stay on existing branch, push to update the existing PR (do NOT create a new one)
+- Same verification steps as above
+
+### Agent Constraints (enforced via prompt)
+
+- Modify at most **5 files** per issue (unless explicitly required)
+- Do not delete existing files
+- Do not install new dependencies (no changes to `Cargo.toml` or `package.json`)
+- Do not modify: `Makefile`, `.env*`, `next.config.ts`, `.claude/` settings
+- If implementation requires >~200 lines of new code, stop and ask for guidance
+- If tests fail after 2 fix attempts, stop and comment the error on the issue/PR
+- Hard limits: **10 minutes** timeout, **$5 USD** max API spend per issue
+
+### Retry Logic
+
+- **Implementation failures**: up to 3 retries. After 3 failures → `manual` label
+- **Revision failures**: up to 2 retries. After 2 failures → `manual` label
+- Re-labeling a `manual` issue back to `todo` resets the retry counter (tracked via `[agent-reset]` comments)
+- Retry counts are tracked by scanning issue comments for `[agent-retry]` / `[agent-reset]` markers
+
+### Required GitHub Labels
+
+The script creates these labels automatically if they don't exist:
+
+| Label | Color | Meaning |
+|-------|-------|---------|
+| `todo` | green | Ready for agent to pick up |
+| `in-progress` | yellow | Agent currently working |
+| `pr-ready` | blue | PR open, awaiting review |
+| `needs-revision` | light blue | PR has feedback to address |
+| `needs-attention` | red-orange | Agent failed, needs investigation |
+| `needs-clarification` | peach | Agent asked a question |
+| `manual` | dark red | Repeated failures, human required |
+
+### Human Workflow
+
+1. Create a GitHub issue describing the bug or feature
+2. Add the `todo` label (plus `bug` or `enhancement` as appropriate)
+3. Wait for the cron job to pick it up (or run manually with `--issue N`)
+4. Review the PR when it appears (`pr-ready` label on the issue)
+5. If changes needed: leave PR review comments, then change label from `pr-ready` → `needs-revision`
+6. Agent will pick it up on next poll and push a revision
+
 ### Things NOT to Do
 
 - Do not use Docker for running or deploying the app
