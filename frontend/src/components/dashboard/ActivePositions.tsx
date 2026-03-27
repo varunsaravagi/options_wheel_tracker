@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatCurrency, daysToExpiry } from '@/lib/utils';
 import { ClosePutModal } from '@/components/trades/ClosePutModal';
 import { CloseCallModal } from '@/components/trades/CloseCallModal';
+import { EditTradeModal } from '@/components/trades/EditTradeModal';
 import type { ShareLot, Trade } from '@/lib/types';
 
 interface Props {
@@ -43,7 +44,8 @@ export function ActivePositions({ openTrades, activeLots, onTradeClose }: Props)
                 <TableCell>{t.expiry_date}</TableCell>
                 <TableCell>{daysToExpiry(t.expiry_date)}d</TableCell>
                 <TableCell>{formatCurrency(t.premium_received)}</TableCell>
-                <TableCell>
+                <TableCell className="space-x-1">
+                  <EditTradeModal trade={t} onSave={onTradeClose ?? (() => {})} />
                   {t.trade_type === 'PUT'
                     ? <ClosePutModal tradeId={t.id} onClose={onTradeClose ?? (() => {})} />
                     : <CloseCallModal tradeId={t.id} onClose={onTradeClose ?? (() => {})} />

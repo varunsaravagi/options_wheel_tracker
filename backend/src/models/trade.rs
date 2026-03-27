@@ -36,6 +36,19 @@ pub struct CreateTrade {
     pub quantity: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateTrade {
+    pub strike_price: Option<f64>,
+    pub expiry_date: Option<String>,
+    pub open_date: Option<String>,
+    pub premium_received: Option<f64>,
+    pub fees_open: Option<f64>,
+    pub quantity: Option<i64>,
+    pub close_date: Option<String>,
+    pub close_premium: Option<f64>,
+    pub fees_close: Option<f64>,
+}
+
 impl Trade {
     pub fn net_premium(&self) -> Option<f64> {
         Some(
@@ -97,6 +110,66 @@ impl Trade {
         .bind(close_premium)
         .bind(fees_close)
         .bind(&date)
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound);
+        }
+
+        Self::get(pool, id).await
+    }
+
+    pub async fn update(
+        pool: &SqlitePool,
+        id: i64,
+        input: &UpdateTrade,
+    ) -> Result<Trade, AppError> {
+        let existing = Self::get(pool, id).await?;
+
+        let strike_price = input.strike_price.unwrap_or(existing.strike_price);
+        let expiry_date = input
+            .expiry_date
+            .clone()
+            .unwrap_or(existing.expiry_date.clone());
+        let open_date = input
+            .open_date
+            .clone()
+            .unwrap_or(existing.open_date.clone());
+        let premium_received = input.premium_received.unwrap_or(existing.premium_received);
+        let fees_open = input.fees_open.unwrap_or(existing.fees_open);
+        let quantity = input.quantity.unwrap_or(existing.quantity);
+
+        // For closed trades, allow editing close fields
+        let close_date = if existing.status != "OPEN" {
+            input.close_date.clone().or(existing.close_date.clone())
+        } else {
+            existing.close_date.clone()
+        };
+        let close_premium = if existing.status != "OPEN" {
+            input.close_premium.or(existing.close_premium)
+        } else {
+            existing.close_premium
+        };
+        let fees_close = if existing.status != "OPEN" {
+            input.fees_close.or(existing.fees_close)
+        } else {
+            existing.fees_close
+        };
+
+        let result = sqlx::query(
+            "UPDATE trades SET strike_price = ?, expiry_date = ?, open_date = ?, premium_received = ?, fees_open = ?, quantity = ?, close_date = ?, close_premium = ?, fees_close = ? WHERE id = ?",
+        )
+        .bind(strike_price)
+        .bind(&expiry_date)
+        .bind(&open_date)
+        .bind(premium_received)
+        .bind(fees_open)
+        .bind(quantity)
+        .bind(&close_date)
+        .bind(close_premium)
+        .bind(fees_close)
         .bind(id)
         .execute(pool)
         .await?;
