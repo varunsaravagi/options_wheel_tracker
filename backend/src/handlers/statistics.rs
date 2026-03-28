@@ -67,6 +67,10 @@ pub async fn get_statistics(
     let mut ticker_premium: BTreeMap<String, f64> = BTreeMap::new();
 
     for trade in &trades {
+        if trade.deleted_at.is_some() {
+            continue;
+        }
+
         let net = trade.net_premium().unwrap_or(0.0);
 
         // STO income: premium received when opening the trade

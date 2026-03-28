@@ -23,6 +23,8 @@ export const api = {
   trades: {
     edit: (tradeId: number, data: object) =>
       request<Trade>(`/api/trades/${tradeId}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (tradeId: number) =>
+      request<Trade>(`/api/trades/${tradeId}`, { method: 'DELETE' }),
   },
   puts: {
     open: (accountId: number, data: object) =>

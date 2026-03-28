@@ -37,6 +37,13 @@ pub async fn get_dashboard(
     let mut total_capital_deployed = 0.0;
 
     for trade in &trades {
+        if trade.deleted_at.is_some() {
+            if trade.status == "OPEN" {
+                open_trades.push(trade.clone());
+            }
+            continue;
+        }
+
         let capital = get_capital_for_trade(&pool, trade).await;
 
         if trade.status == "OPEN" {
