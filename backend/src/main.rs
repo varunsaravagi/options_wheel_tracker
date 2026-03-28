@@ -14,7 +14,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let port = env::var("BACKEND_PORT").unwrap_or_else(|_| "3001".to_string());
+    let port = env::var("BACKEND_PORT").unwrap_or_else(|_| "3005".to_string());
 
     let pool = db::init_pool(&database_url).await;
     db::run_migrations(&pool).await;
