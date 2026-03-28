@@ -10,7 +10,7 @@ refresh-dev:
 # The `cd && command` pattern on a single line is intentional — do not split them.
 start-prod:
 	cd $(PROD_DIR)/backend && cargo run --release &
-	cd $(PROD_DIR)/frontend && npm start &
+	cd $(PROD_DIR)/frontend && PORT=$${FRONTEND_PORT:-3004} BACKEND_PORT=$${BACKEND_PORT:-3005} npm start &
 	@echo "Started. Verify with: pgrep -a -f prod/backend"
 
 stop-prod:
@@ -37,6 +37,6 @@ deploy-prod: stop-prod
 	cd $(PROD_DIR) && git pull origin main
 	@echo "Building and starting prod..."
 	cd $(PROD_DIR)/backend && cargo build --release
-	cd $(PROD_DIR)/frontend && npm run build
+	cd $(PROD_DIR)/frontend && BACKEND_PORT=$${BACKEND_PORT:-3005} npm run build
 	$(MAKE) start-prod
 	@echo "Prod deployed."
