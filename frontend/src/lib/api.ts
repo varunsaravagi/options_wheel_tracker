@@ -20,6 +20,10 @@ export const api = {
     create: (name: string) => request<Account>('/api/accounts', { method: 'POST', body: JSON.stringify({ name }) }),
     delete: (id: number) => request<void>(`/api/accounts/${id}`, { method: 'DELETE' }),
   },
+  trades: {
+    edit: (tradeId: number, data: object) =>
+      request<Trade>(`/api/trades/${tradeId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  },
   puts: {
     open: (accountId: number, data: object) =>
       request<Trade>(`/api/accounts/${accountId}/puts`, { method: 'POST', body: JSON.stringify(data) }),

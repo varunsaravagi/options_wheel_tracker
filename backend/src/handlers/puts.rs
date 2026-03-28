@@ -11,7 +11,7 @@ use crate::{
     errors::AppError,
     models::{
         share_lot::ShareLot,
-        trade::{CreateTrade, Trade},
+        trade::{CreateTrade, Trade, UpdateTrade},
     },
 };
 
@@ -149,6 +149,16 @@ pub async fn close_put(
     }
 }
 
+pub async fn edit_trade(
+    State(pool): State<SqlitePool>,
+    Path(trade_id): Path<i64>,
+    Json(payload): Json<UpdateTrade>,
+) -> Result<Json<Trade>, AppError> {
+    let _existing = Trade::get(&pool, trade_id).await?;
+    let updated = Trade::update(&pool, trade_id, &payload).await?;
+    Ok(Json(updated))
+}
+
 #[cfg(test)]
 mod tests {
     use axum::http::StatusCode;
@@ -253,5 +263,85 @@ mod tests {
         // adjusted_cb = 150 - (200 - 1.30) / 100 = 150 - 1.987 = 148.013
         let adjusted = lot["adjusted_cost_basis"].as_f64().unwrap();
         assert!((adjusted - 148.013).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_edit_open_trade() {
+        let (server, acct_id) = server().await;
+        let create_res = server
+            .post(&format!("/api/accounts/{}/puts", acct_id))
+            .json(&json!({
+                "ticker": "AAPL",
+                "strike_price": 150.0,
+                "expiry_date": "2025-02-21",
+                "open_date": "2025-01-15",
+                "premium_received": 200.0,
+                "fees_open": 1.30
+            }))
+            .await;
+        let trade_id = create_res.json::<serde_json::Value>()["id"]
+            .as_i64()
+            .unwrap();
+
+        let res = server
+            .put(&format!("/api/trades/{}", trade_id))
+            .json(&json!({
+                "premium_received": 250.0,
+                "fees_open": 2.00,
+                "strike_price": 155.0
+            }))
+            .await;
+        res.assert_status(StatusCode::OK);
+        let body = res.json::<serde_json::Value>();
+        assert_eq!(body["premium_received"], 250.0);
+        assert_eq!(body["fees_open"], 2.0);
+        assert_eq!(body["strike_price"], 155.0);
+        // Unchanged fields should remain
+        assert_eq!(body["ticker"], "AAPL");
+        assert_eq!(body["status"], "OPEN");
+    }
+
+    #[tokio::test]
+    async fn test_edit_closed_trade() {
+        let (server, acct_id) = server().await;
+        let create_res = server
+            .post(&format!("/api/accounts/{}/puts", acct_id))
+            .json(&json!({
+                "ticker": "AAPL",
+                "strike_price": 150.0,
+                "expiry_date": "2025-02-21",
+                "open_date": "2025-01-15",
+                "premium_received": 200.0,
+                "fees_open": 1.30
+            }))
+            .await;
+        let trade_id = create_res.json::<serde_json::Value>()["id"]
+            .as_i64()
+            .unwrap();
+
+        // Close the trade first
+        server
+            .post(&format!("/api/trades/puts/{}/close", trade_id))
+            .json(&json!({
+                "action": "BOUGHT_BACK",
+                "close_date": "2025-02-15",
+                "close_premium": 50.0,
+                "fees_close": 1.30
+            }))
+            .await;
+
+        // Edit the closed trade
+        let res = server
+            .put(&format!("/api/trades/{}", trade_id))
+            .json(&json!({
+                "close_premium": 60.0,
+                "fees_close": 2.00
+            }))
+            .await;
+        res.assert_status(StatusCode::OK);
+        let body = res.json::<serde_json::Value>();
+        assert_eq!(body["close_premium"], 60.0);
+        assert_eq!(body["fees_close"], 2.0);
+        assert_eq!(body["status"], "BOUGHT_BACK");
     }
 }
