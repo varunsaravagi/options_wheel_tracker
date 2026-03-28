@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { FilterBar } from '@/components/history/FilterBar';
 import { TradeTable } from '@/components/history/TradeTable';
 import { api } from '@/lib/api';
@@ -11,11 +11,11 @@ export default function HistoryPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [filters, setFilters] = useState<HistoryFilters>({});
 
-  const load = (f: HistoryFilters) => {
+  const load = useCallback((f: HistoryFilters) => {
     api.history({ ...f, account_id: selectedAccountId ?? undefined }).then(setTrades);
-  };
+  }, [selectedAccountId]);
 
-  useEffect(() => { load(filters); }, [selectedAccountId, filters]);
+  useEffect(() => { load(filters); }, [load, filters]);
 
   const handleFilterChange = (f: HistoryFilters) => {
     setFilters(f);
@@ -25,7 +25,7 @@ export default function HistoryPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Trade History</h1>
       <FilterBar filters={filters} onChange={handleFilterChange} />
-      <TradeTable trades={trades} />
+      <TradeTable trades={trades} onTradeUpdate={() => load(filters)} />
     </div>
   );
 }

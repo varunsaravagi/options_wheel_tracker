@@ -14,17 +14,17 @@ start-prod:
 	@echo "Started. Verify with: pgrep -a -f prod/backend"
 
 stop-prod:
-	pkill -f "prod/backend/target" || true
-	pkill -f "prod/frontend"       || true
+	fuser -k $${FRONTEND_PORT:-3004}/tcp 2>/dev/null || true
+	fuser -k $${BACKEND_PORT:-3005}/tcp 2>/dev/null || true
 
 start-dev:
 	cd $(DEV_DIR)/backend && cargo run &
-	cd $(DEV_DIR)/frontend && npm run dev &
+	cd $(DEV_DIR)/frontend && PORT=3001 npm run dev &
 	@echo "Started. Verify with: pgrep -a -f dev/backend"
 
 stop-dev:
-	pkill -f "dev/backend/target" || true
-	pkill -f "dev/frontend"       || true
+	fuser -k 3001/tcp 2>/dev/null || true
+	fuser -k 3003/tcp 2>/dev/null || true
 
 promote:
 	@echo "Merging dev into main..."

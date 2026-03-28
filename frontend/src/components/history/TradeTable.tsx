@@ -1,5 +1,9 @@
+'use client';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { EditTradeModal } from '@/components/trades/EditTradeModal';
+import { api } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import type { Trade } from '@/lib/types';
 
@@ -12,9 +16,14 @@ function netPremium(t: Trade): number {
   return t.premium_received - t.fees_open - (t.close_premium ?? 0) - (t.fees_close ?? 0);
 }
 
-interface Props { trades: Trade[]; }
+interface Props { trades: Trade[]; onTradeUpdate?: () => void; }
 
-export function TradeTable({ trades }: Props) {
+export function TradeTable({ trades, onTradeUpdate }: Props) {
+  const handleDelete = async (tradeId: number) => {
+    await api.trades.delete(tradeId);
+    onTradeUpdate?.();
+  };
+
   return (
     <Table>
       <TableHeader>
@@ -28,25 +37,34 @@ export function TradeTable({ trades }: Props) {
           <TableHead>Premium</TableHead>
           <TableHead>Net</TableHead>
           <TableHead>Status</TableHead>
+          <TableHead></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {trades.length === 0 && (
-          <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">No trades found</TableCell></TableRow>
+          <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">No trades found</TableCell></TableRow>
         )}
         {trades.map((t) => (
-          <TableRow key={t.id}>
-            <TableCell className="font-medium">{t.ticker}</TableCell>
+          <TableRow key={t.id} className={t.deleted_at ? 'opacity-50' : ''}>
+            <TableCell className={`font-medium ${t.deleted_at ? 'line-through' : ''}`}>{t.ticker}</TableCell>
             <TableCell><Badge variant={t.trade_type === 'PUT' ? 'secondary' : 'default'}>{t.trade_type}</Badge></TableCell>
-            <TableCell>{t.quantity}</TableCell>
-            <TableCell>{formatCurrency(t.strike_price)}</TableCell>
-            <TableCell>{t.open_date}</TableCell>
-            <TableCell>{t.close_date ?? '—'}</TableCell>
-            <TableCell>{formatCurrency(t.premium_received)}</TableCell>
-            <TableCell className={netPremium(t) >= 0 ? 'text-green-600' : 'text-red-500'}>
+            <TableCell className={t.deleted_at ? 'line-through' : ''}>{t.quantity}</TableCell>
+            <TableCell className={t.deleted_at ? 'line-through' : ''}>{formatCurrency(t.strike_price)}</TableCell>
+            <TableCell className={t.deleted_at ? 'line-through' : ''}>{t.open_date}</TableCell>
+            <TableCell className={t.deleted_at ? 'line-through' : ''}>{t.close_date ?? '—'}</TableCell>
+            <TableCell className={t.deleted_at ? 'line-through' : ''}>{formatCurrency(t.premium_received)}</TableCell>
+            <TableCell className={`${t.deleted_at ? 'line-through ' : ''}${netPremium(t) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
               {formatCurrency(netPremium(t))}
             </TableCell>
             <TableCell><Badge variant={STATUS_COLORS[t.status] ?? 'outline'}>{t.status}</Badge></TableCell>
+            <TableCell className="space-x-1">
+              {!t.deleted_at && (
+                <>
+                  <EditTradeModal trade={t} onSave={onTradeUpdate ?? (() => {})} />
+                  <Button variant="destructive" size="xs" onClick={() => handleDelete(t.id)}>Delete</Button>
+                </>
+              )}
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>

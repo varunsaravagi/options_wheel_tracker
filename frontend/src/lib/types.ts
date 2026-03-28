@@ -24,6 +24,7 @@ export interface Trade {
   share_lot_id: number | null;
   quantity: number;
   created_at: string;
+  deleted_at: string | null;
 }
 
 export type AcquisitionType = 'MANUAL' | 'ASSIGNED';

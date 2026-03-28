@@ -22,6 +22,9 @@ pub async fn calculate_yields(pool: &SqlitePool, trades: &[Trade]) -> YieldResul
     let today_str = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     for trade in trades {
+        if trade.deleted_at.is_some() {
+            continue;
+        }
         let net = trade.net_premium().unwrap_or(0.0);
         let capital = get_capital_for_trade(pool, trade).await;
 
