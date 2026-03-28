@@ -53,6 +53,10 @@ MAX_RETRIES = 3
 MAX_REVISION_RETRIES = 2
 MAX_BUDGET_USD = 5.0  # Maximum API spend per issue
 
+# Git identity for agent commits (so they don't appear as the cron user)
+AGENT_GIT_AUTHOR_NAME = "options-wheel-bot"
+AGENT_GIT_AUTHOR_EMAIL = "options-wheel-bot@users.noreply.github.com"
+
 
 def run(cmd: list[str], cwd: str | None = None, check: bool = True,
         capture: bool = True, timeout: int | None = None) -> subprocess.CompletedProcess:
@@ -415,11 +419,20 @@ def run_agent(worktree_path: Path, prompt: str) -> tuple[bool, str]:
     ]
 
     log("  Running Claude Code agent...")
-    result = run(
+    env = os.environ.copy()
+    env["GIT_AUTHOR_NAME"] = AGENT_GIT_AUTHOR_NAME
+    env["GIT_AUTHOR_EMAIL"] = AGENT_GIT_AUTHOR_EMAIL
+    env["GIT_COMMITTER_NAME"] = AGENT_GIT_AUTHOR_NAME
+    env["GIT_COMMITTER_EMAIL"] = AGENT_GIT_AUTHOR_EMAIL
+
+    result = subprocess.run(
         cmd,
         cwd=str(worktree_path),
+        capture_output=True,
+        text=True,
+        timeout=MAX_TIMEOUT_SECONDS,
         check=False,
-        timeout=MAX_TIMEOUT_SECONDS
+        env=env,
     )
 
     output = result.stdout or ""
