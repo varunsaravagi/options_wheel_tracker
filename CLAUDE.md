@@ -5,7 +5,7 @@ Options wheel strategy tracker — a web app to track selling cash-secured puts 
 ## Architecture
 
 **Backend**: Rust / Axum 0.7, SQLite via SQLx 0.7, port 3003 (dev) / 3005 (prod)
-**Frontend**: Next.js 16.2.1, React 19, base-ui components, port 3002 (dev) / 3004 (prod)
+**Frontend**: Next.js 16.2.1, React 19, base-ui components, port 3001 (dev) / 3004 (prod)
 **Database**: SQLite files at `/root/options_wheel_tracker/data/{dev,prod}.db` (outside worktrees)
 
 ```
