@@ -20,6 +20,7 @@ pub struct Trade {
     pub share_lot_id: Option<i64>,
     pub quantity: i64,
     pub created_at: String,
+    pub deleted_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,7 +65,7 @@ impl Trade {
         let trade = sqlx::query_as::<_, Trade>(
             "INSERT INTO trades (account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, share_lot_id, quantity)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             RETURNING id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at"
+             RETURNING id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at"
         )
         .bind(input.account_id)
         .bind(&input.trade_type)
@@ -83,7 +84,7 @@ impl Trade {
 
     pub async fn get(pool: &SqlitePool, id: i64) -> Result<Trade, AppError> {
         let trade = sqlx::query_as::<_, Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
              FROM trades WHERE id = ?"
         )
         .bind(id)
@@ -181,10 +182,30 @@ impl Trade {
         Self::get(pool, id).await
     }
 
+    pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<Trade, AppError> {
+        let existing = Self::get(pool, id).await?;
+        if existing.deleted_at.is_some() {
+            return Err(AppError::BadRequest("Trade is already deleted".to_string()));
+        }
+
+        let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+        let result = sqlx::query("UPDATE trades SET deleted_at = ? WHERE id = ?")
+            .bind(&now)
+            .bind(id)
+            .execute(pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound);
+        }
+
+        Self::get(pool, id).await
+    }
+
     pub async fn list_open(pool: &SqlitePool, account_id: i64) -> Result<Vec<Trade>, AppError> {
         let trades = sqlx::query_as::<_, Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at
-             FROM trades WHERE account_id = ? AND status = 'OPEN'"
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
+             FROM trades WHERE account_id = ? AND status = 'OPEN' AND deleted_at IS NULL"
         )
         .bind(account_id)
         .fetch_all(pool)
@@ -200,7 +221,7 @@ impl Trade {
         date_to: Option<&str>,
     ) -> Result<Vec<Trade>, AppError> {
         let all = sqlx::query_as::<_, Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
              FROM trades ORDER BY open_date DESC"
         )
         .fetch_all(pool)
@@ -282,6 +303,45 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(closed.status, "EXPIRED");
+    }
+
+    #[tokio::test]
+    async fn test_soft_delete() {
+        let (pool, account_id) = setup().await;
+
+        let input = CreateTrade {
+            account_id,
+            trade_type: "PUT".to_string(),
+            ticker: "AAPL".to_string(),
+            strike_price: 150.0,
+            expiry_date: "2025-02-21".to_string(),
+            open_date: "2025-01-15".to_string(),
+            premium_received: 200.0,
+            fees_open: 1.30,
+            share_lot_id: None,
+            quantity: None,
+        };
+
+        let trade = Trade::create(&pool, &input).await.unwrap();
+        assert!(trade.deleted_at.is_none());
+
+        let deleted = Trade::soft_delete(&pool, trade.id).await.unwrap();
+        assert!(deleted.deleted_at.is_some());
+
+        // Soft-deleted trade should not appear in list_open
+        let open = Trade::list_open(&pool, account_id).await.unwrap();
+        assert!(open.is_empty());
+
+        // But should still appear in list_with_filters
+        let all = Trade::list_with_filters(&pool, Some(account_id), None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 1);
+        assert!(all[0].deleted_at.is_some());
+
+        // Deleting again should fail
+        let err = Trade::soft_delete(&pool, trade.id).await;
+        assert!(err.is_err());
     }
 
     #[tokio::test]

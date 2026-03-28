@@ -159,6 +159,14 @@ pub async fn edit_trade(
     Ok(Json(updated))
 }
 
+pub async fn delete_trade(
+    State(pool): State<SqlitePool>,
+    Path(trade_id): Path<i64>,
+) -> Result<Json<Trade>, AppError> {
+    let deleted = Trade::soft_delete(&pool, trade_id).await?;
+    Ok(Json(deleted))
+}
+
 #[cfg(test)]
 mod tests {
     use axum::http::StatusCode;
@@ -263,6 +271,39 @@ mod tests {
         // adjusted_cb = 150 - (200 - 1.30) / 100 = 150 - 1.987 = 148.013
         let adjusted = lot["adjusted_cost_basis"].as_f64().unwrap();
         assert!((adjusted - 148.013).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_delete_trade() {
+        let (server, acct_id) = server().await;
+        let create_res = server
+            .post(&format!("/api/accounts/{}/puts", acct_id))
+            .json(&json!({
+                "ticker": "AAPL",
+                "strike_price": 150.0,
+                "expiry_date": "2025-02-21",
+                "open_date": "2025-01-15",
+                "premium_received": 200.0,
+                "fees_open": 1.30
+            }))
+            .await;
+        let trade_id = create_res.json::<serde_json::Value>()["id"]
+            .as_i64()
+            .unwrap();
+
+        let res = server.delete(&format!("/api/trades/{}", trade_id)).await;
+        res.assert_status(StatusCode::OK);
+        let body = res.json::<serde_json::Value>();
+        assert!(body["deleted_at"].as_str().is_some());
+
+        // Deleted trade should be excluded from dashboard calculations
+        let dash = server
+            .get(&format!("/api/dashboard?account_id={}", acct_id))
+            .await;
+        let dash_body = dash.json::<serde_json::Value>();
+        assert_eq!(dash_body["total_premium_collected"].as_f64().unwrap(), 0.0);
+        // But should still appear in open_trades list
+        assert_eq!(dash_body["open_trades"].as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]
