@@ -108,6 +108,74 @@ impl ShareLot {
         Ok(())
     }
 
+    /// Recalculate adjusted_cost_basis for a share lot from scratch.
+    /// Computes initial adjusted CB from the source PUT trade (if ASSIGNED),
+    /// then subtracts net_premium/lot.quantity for each closed, non-deleted CALL trade.
+    pub async fn recalculate_cost_basis(pool: &SqlitePool, id: i64) -> Result<ShareLot, AppError> {
+        let lot = Self::get(pool, id).await?;
+
+        // Start from the original cost basis (strike price for ASSIGNED, user-entered for MANUAL)
+        let mut adjusted_cb = lot.original_cost_basis;
+
+        // For ASSIGNED lots, subtract the source PUT's premium per share
+        if lot.acquisition_type == "ASSIGNED" {
+            if let Some(source_id) = lot.source_trade_id {
+                let source_trade = sqlx::query_as::<_, crate::models::trade::Trade>(
+                    "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
+                     FROM trades WHERE id = ? AND deleted_at IS NULL"
+                )
+                .bind(source_id)
+                .fetch_optional(pool)
+                .await?;
+
+                if let Some(put_trade) = source_trade {
+                    let net_per_share = (put_trade.premium_received - put_trade.fees_open)
+                        / (100.0 * put_trade.quantity as f64);
+                    adjusted_cb -= net_per_share;
+                }
+            }
+        }
+
+        // Subtract net premium per share for each closed, non-deleted CALL trade on this lot
+        let call_trades = sqlx::query_as::<_, crate::models::trade::Trade>(
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
+             FROM trades WHERE share_lot_id = ? AND trade_type = 'CALL' AND status != 'OPEN' AND deleted_at IS NULL"
+        )
+        .bind(id)
+        .fetch_all(pool)
+        .await?;
+
+        for call in &call_trades {
+            let net = call.net_premium().unwrap_or(0.0);
+            adjusted_cb -= net / lot.quantity as f64;
+        }
+
+        let result = sqlx::query_as::<_, ShareLot>(
+            "UPDATE share_lots SET adjusted_cost_basis = ? WHERE id = ?
+             RETURNING id, account_id, ticker, quantity, original_cost_basis, adjusted_cost_basis, acquisition_date, acquisition_type, source_trade_id, status, sale_price, sale_date, created_at"
+        )
+        .bind(adjusted_cb)
+        .bind(id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(result)
+    }
+
+    /// Recalculate adjusted_cost_basis for all share lots in the database.
+    pub async fn recalculate_all_cost_bases(pool: &SqlitePool) -> Result<Vec<ShareLot>, AppError> {
+        let lot_ids: Vec<(i64,)> = sqlx::query_as("SELECT id FROM share_lots")
+            .fetch_all(pool)
+            .await?;
+
+        let mut results = Vec::new();
+        for (lot_id,) in lot_ids {
+            let lot = Self::recalculate_cost_basis(pool, lot_id).await?;
+            results.push(lot);
+        }
+        Ok(results)
+    }
+
     pub async fn mark_sold(
         pool: &SqlitePool,
         id: i64,
