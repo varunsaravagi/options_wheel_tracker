@@ -29,6 +29,10 @@ pub fn create_router(pool: SqlitePool) -> Router {
             get(calls::list_share_lots).post(share_lots::create_manual_lot),
         )
         .route("/api/share-lots/:id/sell", put(share_lots::sell_share_lot))
+        .route(
+            "/api/share-lots/recalculate",
+            post(share_lots::recalculate_all),
+        )
         .route("/api/trades/calls/:id/close", post(calls::close_call))
         .route("/api/dashboard", get(dashboard::get_dashboard))
         .route("/api/history", get(history::get_history))
