@@ -9,13 +9,11 @@ refresh-dev:
 # Each recipe line runs in its own subshell in Make.
 # The `cd && command` pattern on a single line is intentional — do not split them.
 start-prod:
-	cd $(PROD_DIR)/backend && cargo run --release &
-	cd $(PROD_DIR)/frontend && PORT=$${FRONTEND_PORT:-3004} BACKEND_PORT=$${BACKEND_PORT:-3005} npm start &
-	@echo "Started. Verify with: pgrep -a -f prod/backend"
+	systemctl start wheel-tracker.target
+	@echo "Started. Verify with: systemctl status wheel-tracker-backend wheel-tracker-frontend"
 
 stop-prod:
-	fuser -k $${FRONTEND_PORT:-3004}/tcp 2>/dev/null || true
-	fuser -k $${BACKEND_PORT:-3005}/tcp 2>/dev/null || true
+	systemctl stop wheel-tracker.target
 
 start-dev:
 	cd $(DEV_DIR)/backend && cargo run &
