@@ -110,7 +110,7 @@ def fetch_todo_issues() -> list[dict]:
         "--label", "todo",
         "--state", "open",
         "--search", "sort:created-asc",
-        "--json", "number,title,body,labels,createdAt",
+        "--json", "number,title,body,labels,createdAt,author",
         "--limit", "10"
     ], cwd=str(REPO_ROOT))
     issues = json.loads(result.stdout)
@@ -121,7 +121,7 @@ def fetch_issue(number: int) -> dict | None:
     """Fetch a specific issue by number."""
     result = run([
         "gh", "issue", "view", str(number),
-        "--json", "number,title,body,labels,createdAt,state"
+        "--json", "number,title,body,labels,createdAt,state,author"
     ], cwd=str(REPO_ROOT), check=False)
     if result.returncode != 0:
         return None
@@ -161,11 +161,35 @@ def fetch_needs_revision_issue() -> dict | None:
         "--label", "needs-revision",
         "--state", "open",
         "--search", "sort:created-asc",
-        "--json", "number,title,body,labels,createdAt",
+        "--json", "number,title,body,labels,createdAt,author",
         "--limit", "1"
     ], cwd=str(REPO_ROOT))
     issues = json.loads(result.stdout)
     return issues[0] if issues else None
+
+
+def is_trusted_author(issue: dict) -> bool:
+    """Return True if the issue author is a repository collaborator.
+
+    Uses the GitHub collaborator API: returns 204 for collaborators, 404 for
+    non-collaborators. This guards against prompt injection from external users
+    who open issues with malicious content.
+    """
+    author = issue.get("author", {})
+    login = author.get("login", "") if isinstance(author, dict) else str(author)
+    if not login:
+        log("  WARN: Could not determine issue author login")
+        return False
+    result = run(
+        ["gh", "api", f"repos/{REPO}/collaborators/{login}"],
+        cwd=str(REPO_ROOT), check=False
+    )
+    # 204 = is a collaborator, 404 = not a collaborator, other = API error
+    if result.returncode != 0:
+        log(f"  Author '{login}' is not a repository collaborator (or API error)")
+        return False
+    log(f"  Author '{login}' verified as repository collaborator")
+    return True
 
 
 def find_issue_pr(issue_number: int) -> dict | None:
@@ -484,6 +508,17 @@ def process_issue(issue: dict, dry_run: bool = False):
         log("  [DRY RUN] Would process this issue. Skipping.")
         return
 
+    # Reject issues from non-collaborators to prevent prompt injection attacks
+    if not is_trusted_author(issue):
+        author_login = (issue.get("author") or {}).get("login", "unknown")
+        log(f"  Skipping issue #{number}: author '{author_login}' is not a collaborator")
+        set_label(number, "needs-attention", "todo")
+        comment_on_issue(number,
+            "This issue was opened by a user who is not a repository collaborator. "
+            "Automated processing has been skipped for security. "
+            "A maintainer should review and process this issue manually.")
+        return
+
     # Check retry count — reset if the issue was manually re-labeled to todo
     retries = get_retry_count(number)
     if retries >= MAX_RETRIES:
@@ -556,6 +591,17 @@ def process_revision(issue: dict, dry_run: bool = False):
     title = issue["title"]
 
     log(f"Processing revision for issue #{number}: {title}")
+
+    # Reject revisions for issues from non-collaborators
+    if not is_trusted_author(issue):
+        author_login = (issue.get("author") or {}).get("login", "unknown")
+        log(f"  Skipping revision for issue #{number}: author '{author_login}' is not a collaborator")
+        set_label(number, "needs-attention", "needs-revision")
+        comment_on_issue(number,
+            "This issue was opened by a user who is not a repository collaborator. "
+            "Automated revision processing has been skipped for security. "
+            "A maintainer should review and process this revision manually.")
+        return
 
     # Find the existing PR
     pr = find_issue_pr(number)
