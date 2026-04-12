@@ -21,6 +21,8 @@ pub struct Trade {
     pub quantity: i64,
     pub created_at: String,
     pub deleted_at: Option<String>,
+    pub rolled_from_trade_id: Option<i64>,
+    pub rolled_to_trade_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +37,7 @@ pub struct CreateTrade {
     pub fees_open: f64,
     pub share_lot_id: Option<i64>,
     pub quantity: Option<i64>,
+    pub rolled_from_trade_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,9 +66,9 @@ impl Trade {
     pub async fn create(pool: &SqlitePool, input: &CreateTrade) -> Result<Trade, AppError> {
         let qty = input.quantity.unwrap_or(1);
         let trade = sqlx::query_as::<_, Trade>(
-            "INSERT INTO trades (account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, share_lot_id, quantity)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             RETURNING id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at"
+            "INSERT INTO trades (account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, share_lot_id, quantity, rolled_from_trade_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             RETURNING id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at, rolled_from_trade_id, rolled_to_trade_id"
         )
         .bind(input.account_id)
         .bind(&input.trade_type)
@@ -77,6 +80,7 @@ impl Trade {
         .bind(input.fees_open)
         .bind(input.share_lot_id)
         .bind(qty)
+        .bind(input.rolled_from_trade_id)
         .fetch_one(pool)
         .await?;
         Ok(trade)
@@ -84,7 +88,7 @@ impl Trade {
 
     pub async fn get(pool: &SqlitePool, id: i64) -> Result<Trade, AppError> {
         let trade = sqlx::query_as::<_, Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at, rolled_from_trade_id, rolled_to_trade_id
              FROM trades WHERE id = ?"
         )
         .bind(id)
@@ -202,9 +206,41 @@ impl Trade {
         Self::get(pool, id).await
     }
 
+    pub async fn set_rolled_to(
+        pool: &SqlitePool,
+        id: i64,
+        rolled_to_id: i64,
+    ) -> Result<(), AppError> {
+        let result = sqlx::query("UPDATE trades SET rolled_to_trade_id = ? WHERE id = ?")
+            .bind(rolled_to_id)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub async fn set_rolled_from(
+        pool: &SqlitePool,
+        id: i64,
+        rolled_from_id: i64,
+    ) -> Result<(), AppError> {
+        let result = sqlx::query("UPDATE trades SET rolled_from_trade_id = ? WHERE id = ?")
+            .bind(rolled_from_id)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
     pub async fn list_open(pool: &SqlitePool, account_id: i64) -> Result<Vec<Trade>, AppError> {
         let trades = sqlx::query_as::<_, Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at, rolled_from_trade_id, rolled_to_trade_id
              FROM trades WHERE account_id = ? AND status = 'OPEN' AND deleted_at IS NULL"
         )
         .bind(account_id)
@@ -221,7 +257,7 @@ impl Trade {
         date_to: Option<&str>,
     ) -> Result<Vec<Trade>, AppError> {
         let all = sqlx::query_as::<_, Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at, rolled_from_trade_id, rolled_to_trade_id
              FROM trades ORDER BY open_date DESC"
         )
         .fetch_all(pool)
@@ -267,6 +303,7 @@ mod tests {
             fees_open: 1.30,
             share_lot_id: None,
             quantity: None,
+            rolled_from_trade_id: None,
         };
 
         let trade = Trade::create(&pool, &input).await.unwrap();
@@ -289,6 +326,7 @@ mod tests {
             fees_open: 1.30,
             share_lot_id: None,
             quantity: None,
+            rolled_from_trade_id: None,
         };
 
         let trade = Trade::create(&pool, &input).await.unwrap();
@@ -320,6 +358,7 @@ mod tests {
             fees_open: 1.30,
             share_lot_id: None,
             quantity: None,
+            rolled_from_trade_id: None,
         };
 
         let trade = Trade::create(&pool, &input).await.unwrap();
@@ -359,6 +398,7 @@ mod tests {
             fees_open: 1.30,
             share_lot_id: None,
             quantity: None,
+            rolled_from_trade_id: None,
         };
 
         let trade = Trade::create(&pool, &input).await.unwrap();
@@ -375,5 +415,42 @@ mod tests {
 
         let net = closed.net_premium().unwrap();
         assert!((net - 198.70).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_roll_linking() {
+        let (pool, account_id) = setup().await;
+
+        let input = CreateTrade {
+            account_id,
+            trade_type: "PUT".to_string(),
+            ticker: "AAPL".to_string(),
+            strike_price: 150.0,
+            expiry_date: "2025-02-21".to_string(),
+            open_date: "2025-01-10".to_string(),
+            premium_received: 200.0,
+            fees_open: 1.3,
+            share_lot_id: None,
+            quantity: None,
+            rolled_from_trade_id: None,
+        };
+        let trade_a = Trade::create(&pool, &input).await.unwrap();
+
+        let input_b = CreateTrade {
+            open_date: "2025-01-20".to_string(),
+            rolled_from_trade_id: Some(trade_a.id),
+            ..input
+        };
+        let trade_b = Trade::create(&pool, &input_b).await.unwrap();
+
+        Trade::set_rolled_to(&pool, trade_a.id, trade_b.id)
+            .await
+            .unwrap();
+
+        let a = Trade::get(&pool, trade_a.id).await.unwrap();
+        let b = Trade::get(&pool, trade_b.id).await.unwrap();
+
+        assert_eq!(a.rolled_to_trade_id, Some(trade_b.id));
+        assert_eq!(b.rolled_from_trade_id, Some(trade_a.id));
     }
 }

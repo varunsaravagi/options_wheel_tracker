@@ -25,6 +25,7 @@ pub struct OpenCall {
     pub premium_received: f64,
     pub fees_open: f64,
     pub quantity: Option<i64>,
+    pub rolled_from_trade_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -69,8 +70,14 @@ pub async fn open_call(
         fees_open: payload.fees_open,
         share_lot_id: Some(payload.share_lot_id),
         quantity: payload.quantity,
+        rolled_from_trade_id: payload.rolled_from_trade_id,
     };
     let trade = Trade::create(&pool, &input).await?;
+
+    if let Some(prev_id) = payload.rolled_from_trade_id {
+        Trade::set_rolled_to(&pool, prev_id, trade.id).await?;
+    }
+
     Ok((StatusCode::CREATED, Json(trade)))
 }
 

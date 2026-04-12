@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,9 +13,14 @@ import type { ShareLot } from '@/lib/types';
 
 export function CallForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const rolledFromParam = searchParams.get('rolled_from');
+  const lotIdParam = searchParams.get('lot_id');
+  const rolledFromTradeId = rolledFromParam ? parseInt(rolledFromParam) : undefined;
+
   const { selectedAccountId } = useAccounts();
   const [lots, setLots] = useState<ShareLot[]>([]);
-  const [selectedLotId, setSelectedLotId] = useState('');
+  const [selectedLotId, setSelectedLotId] = useState(lotIdParam ?? '');
   const [form, setForm] = useState({
     ticker: '', strike_price: '', expiry_date: '',
     open_date: new Date().toISOString().split('T')[0],
@@ -27,13 +32,15 @@ export function CallForm() {
     if (selectedAccountId) {
       api.shareLots.list(selectedAccountId).then((l) => {
         setLots(l);
-        if (l.length === 1) {
-          setSelectedLotId(String(l[0].id));
-          setForm((f) => ({ ...f, ticker: l[0].ticker }));
+        const initialId = lotIdParam ?? (l.length === 1 ? String(l[0].id) : '');
+        if (initialId) {
+          setSelectedLotId(initialId);
+          const lot = l.find((x) => x.id === Number(initialId));
+          if (lot) setForm((f) => ({ ...f, ticker: lot.ticker }));
         }
       });
     }
-  }, [selectedAccountId]);
+  }, [selectedAccountId, lotIdParam]);
 
   const handleLotChange = (id: string | null) => {
     if (!id) return;
@@ -58,6 +65,7 @@ export function CallForm() {
         premium_received: parseFloat(form.premium_received),
         fees_open: parseFloat(form.fees_open),
         quantity: parseInt(form.quantity),
+        ...(rolledFromTradeId !== undefined && { rolled_from_trade_id: rolledFromTradeId }),
       });
       router.push('/');
     } catch (err: unknown) {
@@ -69,7 +77,12 @@ export function CallForm() {
 
   return (
     <Card className="max-w-md">
-      <CardHeader><CardTitle>Sell to Open — CALL</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>Sell to Open — CALL</CardTitle>
+        {rolledFromTradeId && (
+          <p className="text-sm text-muted-foreground">Rolling from trade #{rolledFromTradeId}</p>
+        )}
+      </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
@@ -117,7 +130,9 @@ export function CallForm() {
             </div>
           ))}
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" disabled={lots.length === 0}>Open CALL Trade</Button>
+          <Button type="submit" className="w-full" disabled={lots.length === 0}>
+            {rolledFromTradeId ? 'Open Rolled CALL' : 'Open CALL Trade'}
+          </Button>
         </form>
       </CardContent>
     </Card>

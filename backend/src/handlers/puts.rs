@@ -24,6 +24,7 @@ pub struct OpenPut {
     pub premium_received: f64,
     pub fees_open: f64,
     pub quantity: Option<i64>,
+    pub rolled_from_trade_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -50,8 +51,14 @@ pub async fn open_put(
         fees_open: payload.fees_open,
         share_lot_id: None,
         quantity: payload.quantity,
+        rolled_from_trade_id: payload.rolled_from_trade_id,
     };
     let trade = Trade::create(&pool, &input).await?;
+
+    if let Some(prev_id) = payload.rolled_from_trade_id {
+        Trade::set_rolled_to(&pool, prev_id, trade.id).await?;
+    }
+
     Ok((StatusCode::CREATED, Json(trade)))
 }
 
@@ -211,6 +218,28 @@ pub async fn delete_trade(
     }
 
     Ok(Json(json!(deleted)))
+}
+
+#[derive(Deserialize)]
+pub struct LinkRollPayload {
+    pub target_trade_id: i64,
+}
+
+pub async fn link_roll(
+    State(pool): State<SqlitePool>,
+    Path(source_id): Path<i64>,
+    Json(payload): Json<LinkRollPayload>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    Trade::get(&pool, source_id).await?;
+    Trade::get(&pool, payload.target_trade_id).await?;
+
+    Trade::set_rolled_to(&pool, source_id, payload.target_trade_id).await?;
+    Trade::set_rolled_from(&pool, payload.target_trade_id, source_id).await?;
+
+    Ok(Json(json!({
+        "source_id": source_id,
+        "target_id": payload.target_trade_id
+    })))
 }
 
 #[cfg(test)]

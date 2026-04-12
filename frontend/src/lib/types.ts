@@ -25,6 +25,8 @@ export interface Trade {
   quantity: number;
   created_at: string;
   deleted_at: string | null;
+  rolled_from_trade_id: number | null;
+  rolled_to_trade_id: number | null;
 }
 
 export type AcquisitionType = 'MANUAL' | 'ASSIGNED';

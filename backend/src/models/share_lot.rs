@@ -121,7 +121,7 @@ impl ShareLot {
         if lot.acquisition_type == "ASSIGNED" {
             if let Some(source_id) = lot.source_trade_id {
                 let source_trade = sqlx::query_as::<_, crate::models::trade::Trade>(
-                    "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
+                    "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at, rolled_from_trade_id, rolled_to_trade_id
                      FROM trades WHERE id = ? AND deleted_at IS NULL"
                 )
                 .bind(source_id)
@@ -138,7 +138,7 @@ impl ShareLot {
 
         // Subtract net premium per share for each closed, non-deleted CALL trade on this lot
         let call_trades = sqlx::query_as::<_, crate::models::trade::Trade>(
-            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at, rolled_from_trade_id, rolled_to_trade_id
              FROM trades WHERE share_lot_id = ? AND trade_type = 'CALL' AND status != 'OPEN' AND deleted_at IS NULL"
         )
         .bind(id)

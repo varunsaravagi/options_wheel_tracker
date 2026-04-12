@@ -70,7 +70,8 @@ pub async fn get_dashboard(
         .await?
     };
 
-    // Capital in active share lots (assigned puts or manual entries) is still deployed.
+    // Capital in active ASSIGNED share lots is still deployed (waiting to sell a covered call).
+    // Manual lots are excluded — they represent intentionally purchased shares, not wheel capital.
     // Skip lots that have an open CALL against them — that capital is already counted
     // via get_capital_for_trade for the CALL trade.
     let open_call_lot_ids: Vec<i64> = open_trades
@@ -79,7 +80,7 @@ pub async fn get_dashboard(
         .filter_map(|t| t.share_lot_id)
         .collect();
     for lot in &active_share_lots {
-        if !open_call_lot_ids.contains(&lot.id) {
+        if lot.acquisition_type == "ASSIGNED" && !open_call_lot_ids.contains(&lot.id) {
             total_capital_deployed += lot.adjusted_cost_basis * lot.quantity as f64;
         }
     }

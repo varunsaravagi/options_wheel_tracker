@@ -25,6 +25,11 @@ export const api = {
       request<Trade>(`/api/trades/${tradeId}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (tradeId: number) =>
       request<Trade>(`/api/trades/${tradeId}`, { method: 'DELETE' }),
+    linkRoll: (sourceId: number, targetTradeId: number) =>
+      request<{ source_id: number; target_id: number }>(
+        `/api/trades/${sourceId}/link-roll`,
+        { method: 'POST', body: JSON.stringify({ target_trade_id: targetTradeId }) }
+      ),
   },
   puts: {
     open: (accountId: number, data: object) =>
