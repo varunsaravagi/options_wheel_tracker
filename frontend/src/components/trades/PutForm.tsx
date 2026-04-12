@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +10,10 @@ import { useAccounts } from '@/contexts/AccountContext';
 
 export function PutForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const rolledFromParam = searchParams.get('rolled_from');
+  const rolledFromTradeId = rolledFromParam ? parseInt(rolledFromParam) : undefined;
+
   const { selectedAccountId } = useAccounts();
   const [form, setForm] = useState({
     ticker: '', strike_price: '', expiry_date: '',
@@ -32,6 +36,7 @@ export function PutForm() {
         premium_received: parseFloat(form.premium_received),
         fees_open: parseFloat(form.fees_open),
         quantity: parseInt(form.quantity),
+        ...(rolledFromTradeId !== undefined && { rolled_from_trade_id: rolledFromTradeId }),
       });
       router.push('/');
     } catch (err: unknown) {
@@ -41,7 +46,12 @@ export function PutForm() {
 
   return (
     <Card className="max-w-md">
-      <CardHeader><CardTitle>Sell to Open — PUT</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>Sell to Open — PUT</CardTitle>
+        {rolledFromTradeId && (
+          <p className="text-sm text-muted-foreground">Rolling from trade #{rolledFromTradeId}</p>
+        )}
+      </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           {[
@@ -60,7 +70,9 @@ export function PutForm() {
             </div>
           ))}
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full">Open PUT Trade</Button>
+          <Button type="submit" className="w-full">
+            {rolledFromTradeId ? 'Open Rolled PUT' : 'Open PUT Trade'}
+          </Button>
         </form>
       </CardContent>
     </Card>

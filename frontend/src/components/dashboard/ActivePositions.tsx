@@ -57,7 +57,7 @@ export function ActivePositions({ openTrades, activeLots, onTradeClose }: Props)
                       <EditTradeModal trade={t} onSave={onTradeClose ?? (() => {})} />
                       {t.trade_type === 'PUT'
                         ? <ClosePutModal tradeId={t.id} onClose={onTradeClose ?? (() => {})} />
-                        : <CloseCallModal tradeId={t.id} onClose={onTradeClose ?? (() => {})} />
+                        : <CloseCallModal tradeId={t.id} shareLotId={t.share_lot_id} onClose={onTradeClose ?? (() => {})} />
                       }
                       <Button variant="destructive" size="xs" onClick={() => handleDelete(t.id)}>Delete</Button>
                     </>
