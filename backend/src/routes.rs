@@ -23,6 +23,7 @@ pub fn create_router(pool: SqlitePool) -> Router {
             "/api/trades/:id",
             put(puts::edit_trade).delete(puts::delete_trade),
         )
+        .route("/api/trades/:id/link-roll", post(puts::link_roll))
         .route("/api/accounts/:id/calls", post(calls::open_call))
         .route(
             "/api/accounts/:id/share-lots",
