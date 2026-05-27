@@ -46,6 +46,7 @@ export interface ShareLot {
   sale_price: number | null;
   sale_date: string | null;
   created_at: string;
+  projected_cb_if_expires: number | null;
 }
 
 export interface DashboardData {

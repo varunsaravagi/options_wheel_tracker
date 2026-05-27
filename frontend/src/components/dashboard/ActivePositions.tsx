@@ -78,6 +78,9 @@ export function ActivePositions({ openTrades, activeLots, onTradeClose }: Props)
               <TableHead>Shares</TableHead>
               <TableHead>Original CB</TableHead>
               <TableHead>Adjusted CB</TableHead>
+              {activeLots.some(l => l.projected_cb_if_expires !== null) && (
+                <TableHead title="Projected adjusted cost basis if the current open call expires worthless (includes deferred roll chain)">Proj. CB (if expires)</TableHead>
+              )}
               <TableHead>CB Reduction</TableHead>
               <TableHead>Source</TableHead>
             </TableRow>
@@ -92,6 +95,11 @@ export function ActivePositions({ openTrades, activeLots, onTradeClose }: Props)
                 <TableCell>{lot.quantity}</TableCell>
                 <TableCell>{formatCurrency(lot.original_cost_basis)}</TableCell>
                 <TableCell className="font-medium">{formatCurrency(lot.adjusted_cost_basis)}</TableCell>
+                {activeLots.some(l => l.projected_cb_if_expires !== null) && (
+                  <TableCell className="font-medium text-blue-600">
+                    {lot.projected_cb_if_expires !== null ? formatCurrency(lot.projected_cb_if_expires) : '—'}
+                  </TableCell>
+                )}
                 <TableCell className="text-green-600">
                   -{formatCurrency(lot.original_cost_basis - lot.adjusted_cost_basis)}
                 </TableCell>

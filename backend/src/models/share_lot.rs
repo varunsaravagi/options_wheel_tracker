@@ -17,6 +17,10 @@ pub struct ShareLot {
     pub sale_price: Option<f64>,
     pub sale_date: Option<String>,
     pub created_at: String,
+    /// Projected adjusted CB assuming the current open call expires worthless.
+    /// None when there is no active roll chain in progress.
+    #[sqlx(skip)]
+    pub projected_cb_if_expires: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -211,6 +215,49 @@ impl ShareLot {
             results.push(lot);
         }
         Ok(results)
+    }
+
+    /// Returns the projected adjusted cost basis assuming the currently-open call expires
+    /// worthless, including all deferred roll legs that are waiting on that open call.
+    /// Returns None when there is no active roll chain (no projection to show).
+    pub async fn compute_projected_cb(
+        pool: &SqlitePool,
+        lot: &ShareLot,
+    ) -> Result<Option<f64>, AppError> {
+        let call_trades = sqlx::query_as::<_, crate::models::trade::Trade>(
+            "SELECT id, account_id, trade_type, ticker, strike_price, expiry_date, open_date, premium_received, fees_open, status, close_date, close_premium, fees_close, share_lot_id, quantity, created_at, deleted_at, rolled_from_trade_id, rolled_to_trade_id
+             FROM trades WHERE share_lot_id = ? AND trade_type = 'CALL' AND deleted_at IS NULL"
+        )
+        .bind(lot.id)
+        .fetch_all(pool)
+        .await?;
+
+        let mut has_active_roll = false;
+        let mut pending_net = 0.0;
+
+        for call in &call_trades {
+            if call.status == "OPEN" {
+                // Treat open call as expiring at $0: only the received premium counts
+                pending_net += call.premium_received - call.fees_open;
+                has_active_roll = true;
+            } else if call.status == "BOUGHT_BACK" {
+                if let Some(rolled_to_id) = call.rolled_to_trade_id {
+                    if Self::roll_chain_terminal_is_open(pool, rolled_to_id).await? {
+                        // Deferred settled leg — include its real net
+                        pending_net += call.net_premium().unwrap_or(0.0);
+                        has_active_roll = true;
+                    }
+                }
+            }
+        }
+
+        if !has_active_roll {
+            return Ok(None);
+        }
+
+        Ok(Some(
+            lot.adjusted_cost_basis - (pending_net / lot.quantity as f64),
+        ))
     }
 
     pub async fn mark_sold(

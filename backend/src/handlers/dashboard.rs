@@ -58,7 +58,7 @@ pub async fn get_dashboard(
     let open_annualized_yield = yields.open_yield;
 
     // Fetch active share lots
-    let active_share_lots = if let Some(account_id) = params.account_id {
+    let mut active_share_lots = if let Some(account_id) = params.account_id {
         ShareLot::list_active(&pool, account_id).await?
     } else {
         // No account_id filter: fetch all active lots via runtime query
@@ -69,6 +69,11 @@ pub async fn get_dashboard(
         .fetch_all(&pool)
         .await?
     };
+
+    // Annotate each lot with its projected CB if the current open call expires worthless
+    for lot in active_share_lots.iter_mut() {
+        lot.projected_cb_if_expires = ShareLot::compute_projected_cb(&pool, lot).await?;
+    }
 
     // Capital in active ASSIGNED share lots is still deployed (waiting to sell a covered call).
     // Manual lots are excluded — they represent intentionally purchased shares, not wheel capital.
